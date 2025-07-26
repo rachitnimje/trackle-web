@@ -168,24 +168,31 @@ func GetAllUserTemplates(db *gorm.DB) gin.HandlerFunc {
 		var templates []models.Template
 		var total int64
 
+		// Build query with user_id filter
 		query := db.Model(&models.Template{}).Where("user_id = ?", userID)
 
-		// count total templates for this user
+		// Get search parameter
+		search := c.Query("search")
+
+		if search != "" {
+			query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
+		}
+
+		// Count total templates for this user with applied filters
 		if err := query.Count(&total).Error; err != nil {
 			appErr := utils.NewDatabaseError("Failed to count templates", err)
 			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		// return early if no template found
+		// Return early if no template found
 		if total == 0 {
 			utils.PaginatedResponse(c, "Templates retrieved successfully", []models.Template{}, page, limit, total)
 			return
 		}
 
-		// get templates with pagination, sorting and preloading
-		if err := db.Where("user_id = ?", userID).
-			Preload("Exercises.Exercise").
+		if err := query.Preload("Exercises.Exercise").
+			Order("created_at DESC").
 			Offset(offset).
 			Limit(limit).
 			Find(&templates).Error; err != nil {

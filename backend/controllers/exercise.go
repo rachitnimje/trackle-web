@@ -17,6 +17,61 @@ type CreateExerciseRequest struct {
 	Category    string `json:"category"`
 }
 
+func CreateExercise(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var createExerciseRequest CreateExerciseRequest
+		if err := c.ShouldBindJSON(&createExerciseRequest); err != nil {
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		if createExerciseRequest.Name == "" {
+			appErr := utils.NewInvalidInputError("Exercise name is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// check if exercise with the given name already exists
+		var count int64
+		if err := db.Model(&models.Exercise{}).Where("name = ?", createExerciseRequest.Name).Count(&count).Error; err != nil {
+			appErr := utils.NewDatabaseError("Failed to retrieve exercise with given name", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		if count != 0 {
+			appErr := utils.NewDuplicateEntryError("Exercise with the given name already exists", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// create exercise model
+		exercise := models.Exercise{
+			Name:        createExerciseRequest.Name,
+			Description: createExerciseRequest.Description,
+			Category:    createExerciseRequest.Category,
+		}
+
+		// Use transaction manager for atomic operation
+		var createdExercise models.Exercise
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// save the exercise to db
+			if err := tx.Create(&exercise).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create exercise", err)
+			}
+
+			// Store the created exercise for response
+			createdExercise = exercise
+			return nil
+		})
+
+		if createdExercise.ID > 0 {
+			utils.CreatedResponse(c, "Exercise created successfully", createdExercise)
+		}
+	}
+}
+
 func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// parse pagination parameters
@@ -86,61 +141,6 @@ func GetExercise(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		utils.SuccessResponse(c, "Exercise retrieved successfully", exercise)
-	}
-}
-
-func CreateExercise(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var createExerciseRequest CreateExerciseRequest
-		if err := c.ShouldBindJSON(&createExerciseRequest); err != nil {
-			appErr := utils.NewValidationError("Invalid request data", err)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		if createExerciseRequest.Name == "" {
-			appErr := utils.NewInvalidInputError("Exercise name is required", nil)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		// check if exercise with the given name already exists
-		var count int64
-		if err := db.Model(&models.Exercise{}).Where("name = ?", createExerciseRequest.Name).Count(&count).Error; err != nil {
-			appErr := utils.NewDatabaseError("Failed to retrieve exercise with given name", err)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		if count != 0 {
-			appErr := utils.NewDuplicateEntryError("Exercise with the given name already exists", nil)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		// create exercise model
-		exercise := models.Exercise{
-			Name:        createExerciseRequest.Name,
-			Description: createExerciseRequest.Description,
-			Category:    createExerciseRequest.Category,
-		}
-
-		// Use transaction manager for atomic operation
-		var createdExercise models.Exercise
-		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
-			// save the exercise to db
-			if err := tx.Create(&exercise).Error; err != nil {
-				return utils.NewDatabaseError("Failed to create exercise", err)
-			}
-
-			// Store the created exercise for response
-			createdExercise = exercise
-			return nil
-		})
-
-		if createdExercise.ID > 0 {
-			utils.CreatedResponse(c, "Exercise created successfully", createdExercise)
-		}
 	}
 }
 

@@ -172,11 +172,55 @@ func GetAllUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Fetch all workouts with their templates in a single query
+		// Parse pagination parameters
+		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
+		if err != nil || limit < 1 || limit > 100 {
+			limit = 10
+		}
+
+		offset := (page - 1) * limit
+
+		// Get search and filter parameters
+		search := c.Query("search")
+		templateID := c.Query("template_id")
+		
+		// Start building the query
+		query := db.Model(&models.Workout{}).Where("user_id = ?", userID)
+
+		// Apply filters
+		if search != "" {
+			query = query.Where("name ILIKE ? OR notes ILIKE ?", "%"+search+"%", "%"+search+"%")
+		}
+		
+		if templateID != "" {
+			query = query.Where("template_id = ?", templateID)
+		}
+
+		// Count total workouts with applied filters
+		var total int64
+		if err := query.Count(&total).Error; err != nil {
+			appErr := utils.NewDatabaseError("Failed to count workouts", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// Return early if no workouts found
+		if total == 0 {
+			utils.PaginatedResponse(c, "Workouts retrieved successfully", []UserWorkoutsResponse{}, page, limit, total)
+			return
+		}
+
+		// Fetch workouts with pagination and filters
 		var workouts []models.Workout
-		if err := db.Where("user_id = ?", userID).
-			Preload("Template").
+		if err := query.Preload("Template").
 			Order("created_at DESC").
+			Offset(offset).
+			Limit(limit).
 			Find(&workouts).Error; err != nil {
 			appErr := utils.NewDatabaseError("Failed to retrieve workouts", err)
 			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
@@ -196,7 +240,7 @@ func GetAllUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 			})
 		}
 
-		utils.SuccessResponse(c, "Workouts retrieved successfully", userWorkoutsResponse)
+		utils.PaginatedResponse(c, "Workouts retrieved successfully", userWorkoutsResponse, page, limit, total)
 	}
 }
 
