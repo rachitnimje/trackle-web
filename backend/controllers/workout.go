@@ -1,0 +1,324 @@
+package controllers
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"github.com/rachitnimje/trackle-web/models"
+	"github.com/rachitnimje/trackle-web/utils"
+)
+
+type CreateWorkoutRequest struct {
+	Name       string                `json:"name" binding:"required"`
+	TemplateID uint                  `json:"template_id" binding:"required"`
+	Notes      string                `json:"notes"`
+	Entries    []WorkoutEntryRequest `json:"entries" binding:"required,min=1"`
+}
+
+type WorkoutEntryRequest struct {
+	ExerciseID uint    `json:"exercise_id" binding:"required"`
+	SetNumber  int     `json:"set_number" binding:"required,min=1"`
+	Reps       int     `json:"reps" binding:"required,min=1"`
+	Weight     float64 `json:"weight" binding:"min=0"`
+}
+
+type UserWorkoutsResponse struct {
+	WorkoutID    uint      `json:"workout_id" binding:"required"`
+	WorkoutName  string    `json:"workout_name" binding:"required"`
+	TemplateID   uint      `json:"template_id" binding:"required"`
+	TemplateName string    `json:"template_name" binding:"required"`
+	LoggedAt     time.Time `json:"logged_at" binding:"required"`
+	Notes        string    `json:"notes" binding:"required"`
+}
+
+type UserWorkoutResponse struct {
+	gorm.Model
+	TemplateID   uint                       `json:"template_id" binding:"required"`
+	TemplateName string                     `json:"template_name" binding:"required"`
+	WorkoutName  string                     `json:"workout_name" binding:"required"`
+	Notes        string                     `json:"notes" binding:"required"`
+	Entries      []UserWorkoutEntryResponse `json:"entries" binding:"required"`
+}
+
+type UserWorkoutEntryResponse struct {
+	ExerciseID   uint    `json:"exercise_id" binding:"required"`
+	ExerciseName string  `json:"exercise_name" binding:"required"`
+	SetNumber    int     `json:"set_number" binding:"required"`
+	Reps         int     `json:"reps" binding:"required"`
+	Weight       float64 `json:"weight" binding:"required"`
+}
+
+func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// extract user_id from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			return
+		}
+
+		// bind and validate request
+		var req CreateWorkoutRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			return
+		}
+
+		// check if the template belongs to the user
+		var template models.Template
+		if err := db.Where("id = ? and user_id = ?", req.TemplateID, userID).
+			First(&template).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				utils.ErrorResponse(c, http.StatusNotFound, "Template not found or access denied", nil)
+			} else {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to verify template", err)
+			}
+			return
+		}
+
+		// Extract unique exercise IDs using map for verification
+		exerciseIDMap := make(map[uint]bool)
+		for _, entry := range req.Entries {
+			exerciseIDMap[entry.ExerciseID] = true
+		}
+
+		var exerciseIDs []uint
+		for id := range exerciseIDMap {
+			exerciseIDs = append(exerciseIDs, id)
+		}
+
+		// Verify all exercises exist
+		var exerciseCount int64
+		if err := db.Model(&models.Exercise{}).
+			Where("id IN ?", exerciseIDs).
+			Count(&exerciseCount).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to verify exercises", err)
+			return
+		}
+
+		if int(exerciseCount) != len(exerciseIDs) {
+			utils.ErrorResponse(c, http.StatusBadRequest, "One or more exercise IDs are invalid", nil)
+			return
+		}
+
+		// save the workout to db
+		workout := models.Workout{
+			Name:       req.Name,
+			UserID:     userID.(uint),
+			TemplateID: req.TemplateID,
+			Notes:      req.Notes,
+		}
+
+		if err := db.Create(&workout).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create workout", err)
+			return
+		}
+
+		// save the workout entries to db
+		var workoutEntries []models.WorkoutEntry
+		for _, r := range req.Entries {
+			workoutEntries = append(workoutEntries, models.WorkoutEntry{
+				WorkoutID:  workout.ID,
+				ExerciseID: r.ExerciseID,
+				SetNumber:  r.SetNumber,
+				Reps:       r.Reps,
+				Weight:     r.Weight,
+			})
+		}
+
+		if err := db.Create(&workoutEntries).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to load workout", err)
+			return
+		}
+
+		utils.CreatedResponse(c, "Workout created successfully", nil)
+	}
+}
+
+func GetUserWorkouts(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// extract user_id from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			return
+		}
+
+		var workouts []models.Workout
+		if err := db.Where("user_id = ?", userID).Find(&workouts).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workouts", err)
+			return
+		}
+
+		// fetch all template names for that user
+		var templates []models.Template
+		if err := db.Where("user_id = ?", userID).Find(&templates).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve templates", err)
+			return
+		}
+
+		templateNames := make(map[uint]string)
+		for _, template := range templates {
+			templateNames[template.ID] = template.Name
+		}
+
+		// create response
+		var userWorkoutsResponse []UserWorkoutsResponse
+		for _, workout := range workouts {
+			userWorkoutsResponse = append(userWorkoutsResponse, UserWorkoutsResponse{
+				WorkoutID:    workout.ID,
+				WorkoutName:  workout.Name,
+				TemplateID:   workout.TemplateID,
+				TemplateName: templateNames[workout.TemplateID],
+				LoggedAt:     workout.CreatedAt,
+				Notes:        workout.Notes,
+			})
+		}
+
+		utils.SuccessResponse(c, "Workouts retrieved successfully", userWorkoutsResponse)
+	}
+}
+
+func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// extract user_id from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			return
+		}
+
+		// parse the workout ID with validation
+		workoutIDStr := c.Param("id")
+		if workoutIDStr == "" {
+			utils.ErrorResponse(c, http.StatusBadRequest, "Template ID is required", nil)
+			return
+		}
+
+		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
+		if err != nil || workoutID == 0 {
+			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid template ID", nil)
+			return
+		}
+
+		// check if the workout belongs to the user
+		var workout models.Workout
+		if err := db.Where("id = ? and user_id = ?", workoutID, userID).
+			First(&workout).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusUnauthorized, "Failed to retrieve workout", err)
+			return
+		}
+
+		// retrieve the workout entries
+		var workoutEntries []models.WorkoutEntry
+		if err := db.Where("workout_id = ?", workoutID).
+			Find(&workoutEntries).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workout entries", err)
+			return
+		}
+
+		var workoutEntriesResponse []UserWorkoutEntryResponse
+		for _, e := range workoutEntries {
+			workoutEntriesResponse = append(workoutEntriesResponse, UserWorkoutEntryResponse{
+				ExerciseID: e.ExerciseID,
+				SetNumber:  e.SetNumber,
+				Reps:       e.Reps,
+				Weight:     e.Weight,
+			})
+		}
+
+		// retrieve the exercise name for each exercise
+		for i, e := range workoutEntriesResponse {
+			exerciseID := e.ExerciseID
+
+			var exercise models.Exercise
+			if err := db.First(&exercise, exerciseID).Error; err != nil {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve exercise", err)
+				return
+			}
+
+			workoutEntriesResponse[i].ExerciseName = exercise.Name
+		}
+
+		// retrieve the template name
+		var template models.Template
+		if err := db.Find(&template, workout.TemplateID).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve template", err)
+			return
+		}
+
+		response := UserWorkoutResponse{
+			TemplateID:   workout.TemplateID,
+			TemplateName: template.Name,
+			WorkoutName:  workout.Name,
+			Notes:        workout.Notes,
+			Entries:      workoutEntriesResponse,
+		}
+
+		utils.SuccessResponse(c, "Workout retrieved successfully", response)
+	}
+}
+
+func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// retrieve the user id from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			return
+		}
+
+		// retrieve the workout id from params and validate
+		workoutIDStr := c.Param("id")
+		if workoutIDStr == "" {
+			utils.ErrorResponse(c, http.StatusBadRequest, "Workout ID is required", nil)
+			return
+		}
+
+		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
+		if err != nil {
+			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid workout ID", err)
+			return
+		}
+
+		// Check if workout exists and belongs to user
+		var workout models.Workout
+		if err := db.Where("id = ? AND user_id = ?", workoutID, userID).First(&workout).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				utils.ErrorResponse(c, http.StatusNotFound, "Workout not found", nil)
+			} else {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to find workout", err)
+			}
+			return
+		}
+
+		// Delete workout
+		if err := db.Delete(&workout).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout", err)
+			return
+		}
+
+		// delete the workout entries with given workout id
+		var workoutEntries []models.WorkoutEntry
+		if err := db.Where("workout_id = ?", workoutID).Find(&workoutEntries).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				utils.ErrorResponse(c, http.StatusNotFound, "Workout entry not found", nil)
+			} else {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to find workout entries", err)
+			}
+			return
+		}
+
+		if err := db.Delete(&workoutEntries).Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout entries", err)
+			return
+		}
+
+		utils.SuccessResponse(c, "Workout deleted successfully", nil)
+	}
+}
