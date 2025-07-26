@@ -106,6 +106,14 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Use transaction for atomic operation
+		tx := db.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
 		// save the workout to db
 		workout := models.Workout{
 			Name:       req.Name,
@@ -114,7 +122,8 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 			Notes:      req.Notes,
 		}
 
-		if err := db.Create(&workout).Error; err != nil {
+		if err := tx.Create(&workout).Error; err != nil {
+			tx.Rollback()
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create workout", err)
 			return
 		}
@@ -131,8 +140,15 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 			})
 		}
 
-		if err := db.Create(&workoutEntries).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to load workout", err)
+		if err := tx.Create(&workoutEntries).Error; err != nil {
+			tx.Rollback()
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create workout entries", err)
+			return
+		}
+		
+		// Commit the transaction
+		if err := tx.Commit().Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to commit transaction", err)
 			return
 		}
 
