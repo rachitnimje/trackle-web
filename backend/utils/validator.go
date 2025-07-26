@@ -4,18 +4,18 @@ import (
 	"regexp"
 	"strings"
 	
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 )
 
-var Validate *validator.Validate
-
 // InitValidator initializes the validator with custom validations
 func InitValidator() {
-	Validate = validator.New()
-	
-	// Register custom validation for strong password
-	Validate.RegisterValidation("strongpassword", ValidateStrongPassword)
-	Validate.RegisterValidation("username", ValidateUsername)
+	// Get Gin's validator
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		// Register custom validation for strong password
+		v.RegisterValidation("strongpassword", ValidateStrongPassword)
+		v.RegisterValidation("username", ValidateUsername)
+	}
 }
 
 // ValidateStrongPassword validates that the password meets strong password requirements
