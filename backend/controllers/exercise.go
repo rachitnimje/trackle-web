@@ -17,7 +17,6 @@ type CreateExerciseRequest struct {
 	Category    string `json:"category"`
 }
 
-// GetAllExercises fetches all the available exercises
 func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// parse pagination parameters
@@ -64,7 +63,6 @@ func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// GetExercise fetch exercise with given ID
 func GetExercise(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		exerciseID := c.Param("id")
@@ -134,7 +132,7 @@ func CreateExercise(db *gorm.DB) gin.HandlerFunc {
 			if err := tx.Create(&exercise).Error; err != nil {
 				return utils.NewDatabaseError("Failed to create exercise", err)
 			}
-			
+
 			// Store the created exercise for response
 			createdExercise = exercise
 			return nil

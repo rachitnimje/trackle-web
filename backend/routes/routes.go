@@ -23,15 +23,15 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 
 		// User templates routes
 		api.POST("/me/templates", controllers.CreateUserTemplate(db))
-		api.GET("/me/templates", controllers.GetTemplates(db))
+		api.GET("/me/templates", controllers.GetAllUserTemplates(db))
 		api.GET("/me/templates/:id", controllers.GetUserTemplate(db))
 		api.DELETE("/me/templates/:id", controllers.DeleteUserTemplate(db))
 
 		// User workouts routes
 		api.POST("/me/workouts", controllers.CreateUserWorkout(db))
-		api.GET("/me/workouts", controllers.GetUserWorkouts(db))
+		api.GET("/me/workouts", controllers.GetAllUserWorkouts(db))
 		api.GET("/me/workouts/:id", controllers.GetUserWorkout(db))
-		api.DELETE("/me/workouts/:id", controllers.DeleteWorkout(db))
+		api.DELETE("/me/workouts/:id", controllers.DeleteUserWorkout(db))
 
 		// Exercise routes (general resources)
 		api.GET("/exercises", controllers.GetAllExercises(db))

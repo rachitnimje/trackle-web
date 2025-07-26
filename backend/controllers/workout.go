@@ -162,7 +162,7 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func GetUserWorkouts(db *gorm.DB) gin.HandlerFunc {
+func GetAllUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// extract user_id from context
 		userID, exists := c.Get("user_id")
@@ -276,7 +276,7 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
+func DeleteUserWorkout(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// retrieve the user id from context
 		userID, exists := c.Get("user_id")
@@ -314,7 +314,6 @@ func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Use transaction manager for atomic deletion
 		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
 			// Delete workout entries first
 			if err := tx.Where("workout_id = ?", workoutID).Delete(&models.WorkoutEntry{}).Error; err != nil {

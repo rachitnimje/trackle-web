@@ -142,7 +142,7 @@ func CreateUserTemplate(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func GetTemplates(db *gorm.DB) gin.HandlerFunc {
+func GetAllUserTemplates(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//extract the user_id from context
 		userID, exists := c.Get("user_id")
@@ -205,32 +205,6 @@ func GetTemplates(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		utils.PaginatedResponse(c, "Templates retrieved successfully", response, page, limit, total)
-	}
-}
-
-func GetUserTemplates(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// extract the user_id from context
-		userID, exists := c.Get("user_id")
-		if !exists {
-			appErr := utils.NewAuthenticationError("User not authenticated", nil)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		var templates []models.Template
-
-		// Only fetch basic template info for faster loading
-		if err := db.Select("id, name, created_at, updated_at").
-			Where("user_id = ?", userID).
-			Order("created_at DESC").
-			Find(&templates).Error; err != nil {
-			appErr := utils.NewDatabaseError("Failed to fetch templates", err)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
-
-		utils.SuccessResponse(c, "Template summary retrieved successfully", templates)
 	}
 }
 
