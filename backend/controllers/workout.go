@@ -320,6 +320,153 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+type UpdateWorkoutRequest struct {
+	Name       string                `json:"name" binding:"required"`
+	TemplateID uint                  `json:"template_id" binding:"required"`
+	Notes      string                `json:"notes"`
+	Entries    []WorkoutEntryRequest `json:"entries" binding:"required,min=1"`
+}
+
+func UpdateUserWorkout(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// extract user_id from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// parse the workout ID with validation
+		workoutIDStr := c.Param("id")
+		if workoutIDStr == "" {
+			appErr := utils.NewInvalidInputError("Workout ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
+		if err != nil || workoutID == 0 {
+			appErr := utils.NewInvalidInputError("Invalid workout ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// Check if workout exists and belongs to user
+		var workout models.Workout
+		if err := db.Where("id = ? AND user_id = ?", workoutID, userID).First(&workout).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				appErr := utils.NewNotFoundError("Workout not found or access denied", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			} else {
+				appErr := utils.NewDatabaseError("Failed to retrieve workout", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			}
+			return
+		}
+
+		// bind and validate request
+		var req UpdateWorkoutRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// check if the template belongs to the user
+		var template models.Template
+		if err := db.Where("id = ? and user_id = ?", req.TemplateID, userID).
+			First(&template).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				appErr := utils.NewNotFoundError("Template not found or access denied", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			} else {
+				appErr := utils.NewDatabaseError("Failed to verify template", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			}
+			return
+		}
+
+		// Extract unique exercise IDs using map for verification
+		exerciseIDMap := make(map[uint]bool)
+		for _, entry := range req.Entries {
+			exerciseIDMap[entry.ExerciseID] = true
+		}
+
+		var exerciseIDs []uint
+		for id := range exerciseIDMap {
+			exerciseIDs = append(exerciseIDs, id)
+		}
+
+		// Verify all exercises exist
+		var exerciseCount int64
+		if err := db.Model(&models.Exercise{}).
+			Where("id IN ?", exerciseIDs).
+			Count(&exerciseCount).Error; err != nil {
+			appErr := utils.NewDatabaseError("Failed to verify exercises", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		if int(exerciseCount) != len(exerciseIDs) {
+			appErr := utils.NewInvalidInputError("One or more exercise IDs are invalid", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// Use our transaction manager for better error handling
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// Update the workout
+			workout.Name = req.Name
+			workout.TemplateID = req.TemplateID
+			workout.Notes = req.Notes
+
+			if err := tx.Save(&workout).Error; err != nil {
+				return utils.NewDatabaseError("Failed to update workout", err)
+			}
+
+			// Delete existing workout entries
+			if err := tx.Where("workout_id = ?", workout.ID).Delete(&models.WorkoutEntry{}).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete existing workout entries", err)
+			}
+
+			// Create new workout entries
+			var workoutEntries []models.WorkoutEntry
+			for _, r := range req.Entries {
+				workoutEntries = append(workoutEntries, models.WorkoutEntry{
+					WorkoutID:  workout.ID,
+					ExerciseID: r.ExerciseID,
+					SetNumber:  r.SetNumber,
+					Reps:       r.Reps,
+					Weight:     r.Weight,
+				})
+			}
+
+			if err := tx.Create(&workoutEntries).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create workout entries", err)
+			}
+
+			// Load the updated workout with entries for response
+			var updatedWorkout models.Workout
+			if err := tx.Preload("Entries.Exercise").First(&updatedWorkout, workout.ID).Error; err != nil {
+				return utils.NewDatabaseError("Failed to load updated workout", err)
+			}
+
+			// Prepare response data outside the transaction
+			c.Set("updated_workout", updatedWorkout)
+			return nil
+		})
+
+		// Get workout from context if available
+		updatedWorkout, exists := c.Get("updated_workout")
+		if exists {
+			utils.SuccessResponse(c, "Workout updated successfully", updatedWorkout)
+		} else {
+			utils.SuccessResponse(c, "Workout updated successfully", nil)
+		}
+	}
+}
+
 func DeleteUserWorkout(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// retrieve the user id from context

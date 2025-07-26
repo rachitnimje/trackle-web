@@ -144,6 +144,87 @@ func GetExercise(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
+type UpdateExerciseRequest struct {
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+}
+
+func UpdateExercise(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		exerciseIDStr := c.Param("id")
+		if exerciseIDStr == "" {
+			appErr := utils.NewInvalidInputError("Exercise ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		exerciseID, err := strconv.ParseUint(exerciseIDStr, 10, 32)
+		if err != nil {
+			appErr := utils.NewInvalidInputError("Invalid exercise ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// First check if the exercise exists
+		var exercise models.Exercise
+		if err := db.First(&exercise, exerciseID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				appErr := utils.NewNotFoundError("Exercise not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+				return
+			}
+			appErr := utils.NewDatabaseError("Failed to fetch exercise", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// Parse and validate request body
+		var updateExerciseRequest UpdateExerciseRequest
+		if err := c.ShouldBindJSON(&updateExerciseRequest); err != nil {
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			return
+		}
+
+		// Check if the new name is already taken by another exercise
+		if updateExerciseRequest.Name != exercise.Name {
+			var count int64
+			if err := db.Model(&models.Exercise{}).Where("name = ? AND id != ?", updateExerciseRequest.Name, exerciseID).Count(&count).Error; err != nil {
+				appErr := utils.NewDatabaseError("Failed to check for exercise name uniqueness", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+				return
+			}
+
+			if count > 0 {
+				appErr := utils.NewDuplicateEntryError("Exercise with the given name already exists", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+				return
+			}
+		}
+
+		// Update exercise with new values
+		exercise.Name = updateExerciseRequest.Name
+		exercise.Description = updateExerciseRequest.Description
+		exercise.Category = updateExerciseRequest.Category
+
+		// Use transaction manager for atomic operation
+		var updatedExercise models.Exercise
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			if err := tx.Save(&exercise).Error; err != nil {
+				return utils.NewDatabaseError("Failed to update exercise", err)
+			}
+
+			updatedExercise = exercise
+			return nil
+		})
+
+		if updatedExercise.ID > 0 {
+			utils.SuccessResponse(c, "Exercise updated successfully", updatedExercise)
+		}
+	}
+}
+
 func DeleteExercise(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		exerciseIDStr := c.Param("id")

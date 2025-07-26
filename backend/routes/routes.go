@@ -31,12 +31,14 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 		api.POST("/me/workouts", controllers.CreateUserWorkout(db))
 		api.GET("/me/workouts", controllers.GetAllUserWorkouts(db))
 		api.GET("/me/workouts/:id", controllers.GetUserWorkout(db))
+		api.PUT("/me/workouts/:id", controllers.UpdateUserWorkout(db))
 		api.DELETE("/me/workouts/:id", controllers.DeleteUserWorkout(db))
 
 		// Exercise routes (general resources)
 		api.GET("/exercises", controllers.GetAllExercises(db))
 		api.POST("/exercises", controllers.CreateExercise(db))
 		api.GET("/exercises/:id", controllers.GetExercise(db))
+		api.PUT("/exercises/:id", controllers.UpdateExercise(db))
 		api.DELETE("/exercises/:id", controllers.DeleteExercise(db))
 	}
 }
