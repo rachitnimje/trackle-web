@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"errors"
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -49,13 +48,15 @@ func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 
 		var totalWorkouts int64
 		if err := query.Count(&totalWorkouts).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to count workouts", err)
+			appErr := utils.NewDatabaseError("Failed to count workouts", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		var workouts []models.Exercise
 		if err := query.Offset(offset).Limit(limit).Find(&workouts).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch workouts", err)
+			appErr := utils.NewDatabaseError("Failed to fetch workouts", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -68,7 +69,8 @@ func GetExercise(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		exerciseID := c.Param("id")
 		if exerciseID == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Exercise ID is required", nil)
+			appErr := utils.NewInvalidInputError("Exercise ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -76,9 +78,11 @@ func GetExercise(db *gorm.DB) gin.HandlerFunc {
 
 		if err := db.Where("id = ?", exerciseID).First(&exercise).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Exercise not found", nil)
+				appErr := utils.NewNotFoundError("Exercise not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch exercise", err)
+				appErr := utils.NewDatabaseError("Failed to fetch exercise", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			}
 			return
 		}
@@ -91,24 +95,28 @@ func CreateExercise(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var createExerciseRequest CreateExerciseRequest
 		if err := c.ShouldBindJSON(&createExerciseRequest); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		if createExerciseRequest.Name == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Exercise name is required", nil)
+			appErr := utils.NewInvalidInputError("Exercise name is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// check if exercise with the given name already exists
 		var count int64
 		if err := db.Model(&models.Exercise{}).Where("name = ?", createExerciseRequest.Name).Count(&count).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusConflict, "Failed to retrieve exercise with given name", err)
+			appErr := utils.NewDatabaseError("Failed to retrieve exercise with given name", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		if count != 0 {
-			utils.ErrorResponse(c, http.StatusConflict, "Exercise with the given name already exists", nil)
+			appErr := utils.NewDuplicateEntryError("Exercise with the given name already exists", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -119,13 +127,22 @@ func CreateExercise(db *gorm.DB) gin.HandlerFunc {
 			Category:    createExerciseRequest.Category,
 		}
 
-		// save the exercise to db
-		if err := db.Create(&exercise).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create exercise", err)
-			return
-		}
+		// Use transaction manager for atomic operation
+		var createdExercise models.Exercise
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// save the exercise to db
+			if err := tx.Create(&exercise).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create exercise", err)
+			}
+			
+			// Store the created exercise for response
+			createdExercise = exercise
+			return nil
+		})
 
-		utils.CreatedResponse(c, "Exercise created successfully", createExerciseRequest)
+		if createdExercise.ID > 0 {
+			utils.CreatedResponse(c, "Exercise created successfully", createdExercise)
+		}
 	}
 }
 
@@ -133,27 +150,39 @@ func DeleteExercise(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		exerciseIDStr := c.Param("id")
 		if exerciseIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Exercise ID is required", nil)
+			appErr := utils.NewInvalidInputError("Exercise ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		exerciseID, err := strconv.ParseUint(exerciseIDStr, 10, 32)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid exercise ID", err)
+			appErr := utils.NewInvalidInputError("Invalid exercise ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		// check if the exercise exists
-		result := db.Delete(&models.Exercise{}, exerciseID)
-		if result.Error != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete exercise", result.Error)
+		// First check if the exercise exists
+		var exercise models.Exercise
+		if err := db.First(&exercise, exerciseID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				appErr := utils.NewNotFoundError("Exercise not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+				return
+			}
+			appErr := utils.NewDatabaseError("Failed to fetch exercise", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		if result.RowsAffected == 0 {
-			utils.ErrorResponse(c, http.StatusNotFound, "Exercise not found", nil)
-			return
-		}
+		// Use transaction manager for atomic operation
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// Delete the exercise
+			if err := tx.Delete(&exercise).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete exercise", err)
+			}
+			return nil
+		})
 
 		utils.SuccessResponse(c, "Exercise deleted successfully", nil)
 	}

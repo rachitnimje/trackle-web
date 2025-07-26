@@ -74,17 +74,25 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			Role:     role,
 		}
 
-		if err := db.Create(&user).Error; err != nil {
-			appErr := utils.NewDatabaseError("Failed to create user", err)
-			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
-			return
-		}
+		// Use transaction manager for atomic operation
+		var createdUser models.User
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			if err := tx.Create(&user).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create user", err)
+			}
+			
+			// Store the created user for response
+			createdUser = user
+			return nil
+		})
 
-		response := RegisterResponse{
-			User: user,
-		}
+		if createdUser.ID > 0 {
+			response := RegisterResponse{
+				User: createdUser,
+			}
 
-		utils.CreatedResponse(c, "User created successfully", response)
+			utils.CreatedResponse(c, "User created successfully", response)
+		}
 	}
 }
 
