@@ -2,6 +2,8 @@ package utils
 
 import (
 	"errors"
+	"github.com/joho/godotenv"
+	"log"
 	"os"
 	"time"
 
@@ -12,6 +14,11 @@ var jwtSecret = getJWTSecret()
 
 // getJWTSecret retrieves the JWT secret from the environment variable and panics if the secret is not set
 func getJWTSecret() []byte {
+	var err = godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	secret := os.Getenv("JWT_SECRET")
 
 	if secret == "" {
