@@ -12,9 +12,9 @@ import (
 )
 
 type RegisterRequest struct {
-	Username string `json:"username" binding:"required"`
+	Username string `json:"username" binding:"required,username"`
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Password string `json:"password" binding:"required,strongpassword"`
 	Role     string `json:"role"`
 }
 
@@ -35,25 +35,14 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req RegisterRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			errorMsg := utils.ValidationErrorToText(err)
+			utils.ErrorResponse(c, http.StatusBadRequest, errorMsg, nil)
 			return
 		}
 
-		// Validate input
-		if !utils.IsValidEmail(req.Email) {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid email format", nil)
-			return
-		}
-
-		if !utils.IsValidUsername(req.Username) {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Username must be 3-30 characters, alphanumeric and underscore only", nil)
-			return
-		}
-
-		if !utils.IsValidPassword(req.Password) {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Password must be at least 8 characters long", nil)
-			return
-		}
+		// Email already validated by the binding tag
+		// Username already validated by the binding tag
+		// Password already validated by the binding tag
 
 		role := req.Role
 		if role == "" {
@@ -99,7 +88,8 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			errorMsg := utils.ValidationErrorToText(err)
+			utils.ErrorResponse(c, http.StatusBadRequest, errorMsg, nil)
 			return
 		}
 

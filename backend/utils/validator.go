@@ -3,26 +3,69 @@ package utils
 import (
 	"regexp"
 	"strings"
+	
+	"github.com/go-playground/validator/v10"
 )
 
-func IsValidEmail(email string) bool {
-	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	return emailRegex.MatchString(email)
+var Validate *validator.Validate
+
+// InitValidator initializes the validator with custom validations
+func InitValidator() {
+	Validate = validator.New()
+	
+	// Register custom validation for strong password
+	Validate.RegisterValidation("strongpassword", ValidateStrongPassword)
+	Validate.RegisterValidation("username", ValidateUsername)
 }
 
-func IsValidPassword(password string) bool {
-	// At least 8 characters
-	return len(password) >= 8
+// ValidateStrongPassword validates that the password meets strong password requirements
+func ValidateStrongPassword(fl validator.FieldLevel) bool {
+	password := fl.Field().String()
+	
+	// Minimum length of 8 characters
+	if len(password) < 8 {
+		return false
+	}
+
+	// At least one uppercase letter
+	uppercaseRegex := regexp.MustCompile(`[A-Z]`)
+	if !uppercaseRegex.MatchString(password) {
+		return false
+	}
+
+	// At least one lowercase letter
+	lowercaseRegex := regexp.MustCompile(`[a-z]`)
+	if !lowercaseRegex.MatchString(password) {
+		return false
+	}
+
+	// At least one number
+	numberRegex := regexp.MustCompile(`[0-9]`)
+	if !numberRegex.MatchString(password) {
+		return false
+	}
+
+	// At least one special character
+	specialCharRegex := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]`)
+	return specialCharRegex.MatchString(password)
 }
 
-func IsValidUsername(username string) bool {
+// ValidateUsername validates that the username meets requirements
+func ValidateUsername(fl validator.FieldLevel) bool {
+	username := fl.Field().String()
+	
 	// Username should be 3-30 characters, alphanumeric and underscore only
 	if len(username) < 3 || len(username) > 30 {
 		return false
 	}
-	
+
 	usernameRegex := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 	return usernameRegex.MatchString(username)
+}
+
+func IsValidEmail(email string) bool {
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return emailRegex.MatchString(email)
 }
 
 func TrimAndLower(s string) string {

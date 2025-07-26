@@ -8,6 +8,7 @@ import (
 	"github.com/rachitnimje/trackle-web/config"
 	"github.com/rachitnimje/trackle-web/middleware"
 	"github.com/rachitnimje/trackle-web/routes"
+	"github.com/rachitnimje/trackle-web/utils"
 )
 
 func main() {
@@ -16,6 +17,9 @@ func main() {
 	
 	// Run migrations
 	config.MigrateDB(db)
+
+	// Initialize validator
+	utils.InitValidator()
 
 	// Initialize Gin router
 	r := gin.Default()
