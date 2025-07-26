@@ -14,7 +14,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	r.POST("/login", controllers.Login(db))
 
 	// Protected routes
-	api := r.Group("/api")
+	api := r.Group("/api/v1")
 	api.Use(middleware.AuthMiddleware())
 	{
 		// User profile routes
