@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"errors"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -58,14 +57,16 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		// extract user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// bind and validate request
 		var req CreateWorkoutRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -74,9 +75,11 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		if err := db.Where("id = ? and user_id = ?", req.TemplateID, userID).
 			First(&template).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Template not found or access denied", nil)
+				appErr := utils.NewNotFoundError("Template not found or access denied", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to verify template", err)
+				appErr := utils.NewDatabaseError("Failed to verify template", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			}
 			return
 		}
@@ -97,62 +100,65 @@ func CreateUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		if err := db.Model(&models.Exercise{}).
 			Where("id IN ?", exerciseIDs).
 			Count(&exerciseCount).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to verify exercises", err)
+			appErr := utils.NewDatabaseError("Failed to verify exercises", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		if int(exerciseCount) != len(exerciseIDs) {
-			utils.ErrorResponse(c, http.StatusBadRequest, "One or more exercise IDs are invalid", nil)
+			appErr := utils.NewInvalidInputError("One or more exercise IDs are invalid", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		// Use transaction for atomic operation
-		tx := db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
+		// Use our transaction manager for better error handling
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// save the workout to db
+			workout := models.Workout{
+				Name:       req.Name,
+				UserID:     userID.(uint),
+				TemplateID: req.TemplateID,
+				Notes:      req.Notes,
 			}
-		}()
 
-		// save the workout to db
-		workout := models.Workout{
-			Name:       req.Name,
-			UserID:     userID.(uint),
-			TemplateID: req.TemplateID,
-			Notes:      req.Notes,
-		}
+			if err := tx.Create(&workout).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create workout", err)
+			}
 
-		if err := tx.Create(&workout).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create workout", err)
-			return
-		}
+			// save the workout entries to db
+			var workoutEntries []models.WorkoutEntry
+			for _, r := range req.Entries {
+				workoutEntries = append(workoutEntries, models.WorkoutEntry{
+					WorkoutID:  workout.ID,
+					ExerciseID: r.ExerciseID,
+					SetNumber:  r.SetNumber,
+					Reps:       r.Reps,
+					Weight:     r.Weight,
+				})
+			}
 
-		// save the workout entries to db
-		var workoutEntries []models.WorkoutEntry
-		for _, r := range req.Entries {
-			workoutEntries = append(workoutEntries, models.WorkoutEntry{
-				WorkoutID:  workout.ID,
-				ExerciseID: r.ExerciseID,
-				SetNumber:  r.SetNumber,
-				Reps:       r.Reps,
-				Weight:     r.Weight,
-			})
-		}
+			if err := tx.Create(&workoutEntries).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create workout entries", err)
+			}
 
-		if err := tx.Create(&workoutEntries).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create workout entries", err)
-			return
-		}
-		
-		// Commit the transaction
-		if err := tx.Commit().Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to commit transaction", err)
-			return
-		}
+			// Load the created workout with entries for response
+			var createdWorkout models.Workout
+			if err := tx.Preload("Entries.Exercise").First(&createdWorkout, workout.ID).Error; err != nil {
+				return utils.NewDatabaseError("Failed to load created workout", err)
+			}
 
-		utils.CreatedResponse(c, "Workout created successfully", nil)
+			// Prepare response data outside the transaction
+			c.Set("created_workout", createdWorkout)
+			return nil
+		})
+
+		// Get workout from context if available
+		createdWorkout, exists := c.Get("created_workout")
+		if exists {
+			utils.CreatedResponse(c, "Workout created successfully", createdWorkout)
+		} else {
+			utils.CreatedResponse(c, "Workout created successfully", nil)
+		}
 	}
 }
 
@@ -161,7 +167,8 @@ func GetUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 		// extract user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -171,7 +178,8 @@ func GetUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 			Preload("Template").
 			Order("created_at DESC").
 			Find(&workouts).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workouts", err)
+			appErr := utils.NewDatabaseError("Failed to retrieve workouts", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -197,20 +205,23 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		// extract user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// parse the workout ID with validation
 		workoutIDStr := c.Param("id")
 		if workoutIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Workout ID is required", nil)
+			appErr := utils.NewInvalidInputError("Workout ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
 		if err != nil || workoutID == 0 {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid workout ID", nil)
+			appErr := utils.NewInvalidInputError("Invalid workout ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -220,9 +231,11 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 			Preload("Template").
 			First(&workout).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Workout not found or access denied", nil)
+				appErr := utils.NewNotFoundError("Workout not found or access denied", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workout", err)
+				appErr := utils.NewDatabaseError("Failed to retrieve workout", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			}
 			return
 		}
@@ -232,7 +245,8 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		if err := db.Where("workout_id = ?", workoutID).
 			Preload("Exercise").
 			Find(&workoutEntries).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workout entries", err)
+			appErr := utils.NewDatabaseError("Failed to retrieve workout entries", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -267,20 +281,23 @@ func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
 		// retrieve the user id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// retrieve the workout id from params and validate
 		workoutIDStr := c.Param("id")
 		if workoutIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Workout ID is required", nil)
+			appErr := utils.NewInvalidInputError("Workout ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid workout ID", err)
+			appErr := utils.NewInvalidInputError("Invalid workout ID", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -288,40 +305,29 @@ func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
 		var workout models.Workout
 		if err := db.Where("id = ? AND user_id = ?", workoutID, userID).First(&workout).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Workout not found", nil)
+				appErr := utils.NewNotFoundError("Workout not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to find workout", err)
+				appErr := utils.NewDatabaseError("Failed to find workout", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			}
 			return
 		}
 
-		// Use transaction to ensure atomic deletion
-		tx := db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
+		// Use transaction manager for atomic deletion
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// Delete workout entries first
+			if err := tx.Where("workout_id = ?", workoutID).Delete(&models.WorkoutEntry{}).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete workout entries", err)
 			}
-		}()
 
-		// Delete workout entries first
-		if err := tx.Where("workout_id = ?", workoutID).Delete(&models.WorkoutEntry{}).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout entries", err)
-			return
-		}
+			// Delete workout
+			if err := tx.Delete(&workout).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete workout", err)
+			}
 
-		// Delete workout
-		if err := tx.Delete(&workout).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout", err)
-			return
-		}
-
-		// Commit the transaction
-		if err := tx.Commit().Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to commit transaction", err)
-			return
-		}
+			return nil
+		})
 
 		utils.SuccessResponse(c, "Workout deleted successfully", nil)
 	}

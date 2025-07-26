@@ -28,7 +28,13 @@ func main() {
 	utils.InitValidator()
 
 	// Initialize Gin router
-	r := gin.Default()
+	r := gin.New() // Use New() instead of Default() to customize middleware
+
+	// Add recovery middleware to handle panics
+	r.Use(gin.Recovery())
+	
+	// Add custom recovery middleware for better error handling
+	r.Use(middleware.ErrorRecoveryMiddleware())
 
 	// Add middleware
 	r.Use(middleware.CORSMiddleware())

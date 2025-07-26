@@ -50,14 +50,16 @@ func CreateUserTemplate(db *gorm.DB) gin.HandlerFunc {
 		// extract the user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// extract the request body from context
 		var req CreateTemplateRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request data", err)
+			appErr := utils.NewValidationError("Invalid request data", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -78,66 +80,65 @@ func CreateUserTemplate(db *gorm.DB) gin.HandlerFunc {
 		// verify all exercises exist
 		var exerciseCount int64
 		if err := db.Model(&models.Exercise{}).Where("id IN ?", exerciseIDs).Count(&exerciseCount).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to verify exercises", err)
+			appErr := utils.NewDatabaseError("Failed to verify exercises", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		if int(exerciseCount) != len(exerciseIDs) {
-			utils.ErrorResponse(c, http.StatusBadRequest, "One or more exercise IDs are invalid", nil)
+			appErr := utils.NewInvalidInputError("One or more exercise IDs are invalid", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		// use transaction for atomic operation
-		tx := db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
+		// transaction manager for atomic operation
+		var createdTemplateID uint
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// create template
+			template := models.Template{
+				Name:        req.Name,
+				UserID:      userID.(uint),
+				Description: req.Description,
 			}
-		}()
 
-		// create template
-		template := models.Template{
-			Name:        req.Name,
-			UserID:      userID.(uint),
-			Description: req.Description,
-		}
-
-		if err := tx.Create(&template).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create template", err)
-			return
-		}
-
-		// create template exercises for batch insert
-		var templateExercises []models.TemplateExercise
-		for _, e := range req.Exercises {
-			templateExercise := models.TemplateExercise{
-				TemplateID: template.ID,
-				ExerciseID: e.ExerciseID,
-				Sets:       e.Sets,
+			if err := tx.Create(&template).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create template", err)
 			}
-			templateExercises = append(templateExercises, templateExercise)
-		}
 
-		// batch create template exercises
-		if err := tx.Create(&templateExercises).Error; err != nil {
-			tx.Rollback()
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create template exercise", err)
-			return
-		}
+			createdTemplateID = template.ID
 
-		if err := tx.Commit().Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to commit transaction", err)
-			return
-		}
+			// create template exercises for batch insert
+			var templateExercises []models.TemplateExercise
+			for _, e := range req.Exercises {
+				templateExercise := models.TemplateExercise{
+					TemplateID: template.ID,
+					ExerciseID: e.ExerciseID,
+					Sets:       e.Sets,
+				}
+				templateExercises = append(templateExercises, templateExercise)
+			}
 
-		// reload template with exercises
-		if err := db.Preload("Exercises.Exercise").First(&template, template.ID).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to load template", err)
-			return
-		}
+			// batch create template exercises
+			if err := tx.Create(&templateExercises).Error; err != nil {
+				return utils.NewDatabaseError("Failed to create template exercise", err)
+			}
 
-		utils.CreatedResponse(c, "Template created successfully", nil)
+			return nil
+		})
+
+		// Check if we need to reload template data for response
+		if createdTemplateID > 0 {
+			var template models.Template
+			if err := db.Preload("Exercises.Exercise").First(&template, createdTemplateID).Error; err != nil {
+				appErr := utils.NewDatabaseError("Failed to load template", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+				return
+			}
+
+			utils.CreatedResponse(c, "Template created successfully", template)
+		} else {
+			utils.CreatedResponse(c, "Template created successfully", nil)
+		}
 	}
 }
 
@@ -146,7 +147,8 @@ func GetTemplates(db *gorm.DB) gin.HandlerFunc {
 		//extract the user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -170,7 +172,8 @@ func GetTemplates(db *gorm.DB) gin.HandlerFunc {
 
 		// count total templates for this user
 		if err := query.Count(&total).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to count templates", err)
+			appErr := utils.NewDatabaseError("Failed to count templates", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -186,7 +189,8 @@ func GetTemplates(db *gorm.DB) gin.HandlerFunc {
 			Offset(offset).
 			Limit(limit).
 			Find(&templates).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch templates", err)
+			appErr := utils.NewDatabaseError("Failed to fetch templates", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -209,7 +213,8 @@ func GetUserTemplates(db *gorm.DB) gin.HandlerFunc {
 		// extract the user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -220,7 +225,8 @@ func GetUserTemplates(db *gorm.DB) gin.HandlerFunc {
 			Where("user_id = ?", userID).
 			Order("created_at DESC").
 			Find(&templates).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch templates", err)
+			appErr := utils.NewDatabaseError("Failed to fetch templates", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -233,20 +239,23 @@ func GetUserTemplate(db *gorm.DB) gin.HandlerFunc {
 		// extract the user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// parse the template ID with validation
 		templateIDStr := c.Param("id")
 		if templateIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Template ID is required", nil)
+			appErr := utils.NewInvalidInputError("Template ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		templateID, err := strconv.ParseUint(templateIDStr, 10, 32)
 		if err != nil || templateID == 0 {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid template ID", nil)
+			appErr := utils.NewInvalidInputError("Invalid template ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -256,9 +265,11 @@ func GetUserTemplate(db *gorm.DB) gin.HandlerFunc {
 			Preload("Exercises.Exercise").
 			First(&template).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Template not found", nil)
+				appErr := utils.NewNotFoundError("Template not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch template", err)
+				appErr := utils.NewDatabaseError("Failed to fetch template", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			}
 			return
 		}
@@ -290,34 +301,52 @@ func DeleteUserTemplate(db *gorm.DB) gin.HandlerFunc {
 		// extract the user_id from context
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		templateIDStr := c.Param("id")
 		if templateIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Template ID is required", nil)
+			appErr := utils.NewInvalidInputError("Template ID is required", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		templateID, err := strconv.ParseUint(templateIDStr, 10, 32)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid template ID", err)
+			appErr := utils.NewInvalidInputError("Invalid template ID", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		// Check if template exists and belongs to user
-		result := db.Where("user_id = ?", userID).Delete(&models.Template{}, templateID)
-
-		if result.Error != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to find template", result.Error)
+		// First check if template exists and belongs to user
+		var template models.Template
+		if err := db.Where("id = ? AND user_id = ?", templateID, userID).First(&template).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				appErr := utils.NewNotFoundError("Template not found", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			} else {
+				appErr := utils.NewDatabaseError("Failed to find template", err)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
+			}
 			return
 		}
 
-		if result.RowsAffected == 0 {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Template not found", nil)
-			return
-		}
+		// transaction manager to handle the deletion atomically
+		utils.TransactionManager(db, c, func(tx *gorm.DB) error {
+			// First delete template exercises
+			if err := tx.Where("template_id = ?", templateID).Delete(&models.TemplateExercise{}).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete template exercises", err)
+			}
+
+			// Then delete the template
+			if err := tx.Delete(&template).Error; err != nil {
+				return utils.NewDatabaseError("Failed to delete template", err)
+			}
+
+			return nil
+		})
 
 		utils.SuccessResponse(c, "Template deleted successfully", nil)
 	}

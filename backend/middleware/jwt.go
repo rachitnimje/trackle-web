@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/rachitnimje/trackle-web/utils"
 )
@@ -15,7 +13,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			// If no cookie, try Authorization header
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {
-				utils.ErrorResponse(c, http.StatusUnauthorized, "Authorization token required", nil)
+				appErr := utils.NewAuthenticationError("Authorization token required", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 				c.Abort()
 				return
 			}
@@ -24,7 +23,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 				token = authHeader[7:]
 			} else {
-				utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid authorization header format", nil)
+				appErr := utils.NewAuthenticationError("Invalid authorization header format", nil)
+				utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 				c.Abort()
 				return
 			}
@@ -33,7 +33,8 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Validate the token
 		claims, err := utils.ValidateJWT(token)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid or expired token", err)
+			appErr := utils.NewAuthenticationError("Invalid or expired token", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			c.Abort()
 			return
 		}

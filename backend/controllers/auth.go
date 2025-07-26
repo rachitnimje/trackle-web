@@ -36,7 +36,8 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 		var req RegisterRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			errorMsg := utils.ValidationErrorToText(err)
-			utils.ErrorResponse(c, http.StatusBadRequest, errorMsg, nil)
+			appErr := utils.NewValidationError(errorMsg, err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -52,14 +53,16 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 		// Check if user already exists
 		var existingUser models.User
 		if err := db.Where("email = ? OR username = ?", utils.TrimAndLower(req.Email), req.Username).First(&existingUser).Error; err == nil {
-			utils.ErrorResponse(c, http.StatusConflict, "User with this email or username already exists", nil)
+			appErr := utils.NewDuplicateEntryError("User with this email or username already exists", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// Hash password
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to process password", err)
+			appErr := utils.NewInternalError("Failed to process password", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -72,7 +75,8 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		if err := db.Create(&user).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create user", err)
+			appErr := utils.NewDatabaseError("Failed to create user", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -89,27 +93,31 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			errorMsg := utils.ValidationErrorToText(err)
-			utils.ErrorResponse(c, http.StatusBadRequest, errorMsg, nil)
+			appErr := utils.NewValidationError(errorMsg, err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// Find user by email
 		var user models.User
 		if err := db.Where("email = ?", utils.TrimAndLower(req.Email)).First(&user).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid credentials", nil)
+			appErr := utils.NewAuthenticationError("Invalid credentials", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// Verify password
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "Invalid credentials", nil)
+			appErr := utils.NewAuthenticationError("Invalid credentials", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		// Generate JWT token
 		token, err := utils.GenerateJWT(user.ID)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to generate token", err)
+			appErr := utils.NewInternalError("Failed to generate token", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
@@ -137,13 +145,15 @@ func Me(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not authenticated", nil)
+			appErr := utils.NewAuthenticationError("User not authenticated", nil)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
 		var user models.User
 		if err := db.First(&user, userID).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusNotFound, "User not found", err)
+			appErr := utils.NewNotFoundError("User not found", err)
+			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
