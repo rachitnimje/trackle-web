@@ -2,12 +2,23 @@ package utils
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("your-super-secret-key-change-this-in-production")
+var jwtSecret = getJWTSecret()
+
+// getJWTSecret retrieves the JWT secret from the environment variable and panics if the secret is not set
+func getJWTSecret() []byte {
+	secret := os.Getenv("JWT_SECRET")
+
+	if secret == "" {
+		panic("JWT_SECRET environment variable is not set. Application cannot start.")
+	}
+	return []byte(secret)
+}
 
 type JWTClaims struct {
 	UserID uint `json:"user_id"`
@@ -16,7 +27,7 @@ type JWTClaims struct {
 
 func GenerateJWT(userID uint) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour)
-	
+
 	claims := &JWTClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -33,7 +44,7 @@ func GenerateJWT(userID uint) (string, error) {
 
 func ValidateJWT(tokenStr string) (*JWTClaims, error) {
 	claims := &JWTClaims{}
-	
+
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
