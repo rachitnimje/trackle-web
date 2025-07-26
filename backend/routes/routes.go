@@ -14,32 +14,29 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 	r.POST("/login", controllers.Login(db))
 
 	// Protected routes
-	auth := r.Group("/")
-	auth.Use(middleware.AuthMiddleware())
+	api := r.Group("/api")
+	api.Use(middleware.AuthMiddleware())
 	{
-		// Auth routes
-		auth.POST("/logout", controllers.Logout())
-		auth.GET("/me", controllers.Me(db))
+		// User profile routes
+		api.GET("/me", controllers.Me(db))
+		api.POST("/logout", controllers.Logout())
 
-		// Template routes: for admin
+		// User templates routes
+		api.POST("/me/templates", controllers.CreateUserTemplate(db))
+		api.GET("/me/templates", controllers.GetTemplates(db))
+		api.GET("/me/templates/:id", controllers.GetUserTemplate(db))
+		api.DELETE("/me/templates/:id", controllers.DeleteUserTemplate(db))
 
-		// Template routes: for users
-		auth.POST("/templates/me", controllers.CreateUserTemplate(db))
-		auth.GET("/templates/me", controllers.GetTemplates(db))
-		//auth.GET("/templates/me", controllers.GetUserTemplates(db))
-		auth.GET("/templates/me/:id", controllers.GetUserTemplate(db))
-		auth.DELETE("/templates/me/:id", controllers.DeleteUserTemplate(db))
+		// User workouts routes
+		api.POST("/me/workouts", controllers.CreateUserWorkout(db))
+		api.GET("/me/workouts", controllers.GetUserWorkouts(db))
+		api.GET("/me/workouts/:id", controllers.GetUserWorkout(db))
+		api.DELETE("/me/workouts/:id", controllers.DeleteWorkout(db))
 
-		// Exercise routes: for everyone
-		auth.GET("/exercises", controllers.GetAllExercises(db))
-		auth.POST("/exercises", controllers.CreateExercise(db))
-		auth.GET("/exercises/:id", controllers.GetExercise(db))
-		auth.DELETE("/exercises/:id", controllers.DeleteExercise(db))
-
-		// Workout routes: for users
-		auth.POST("/workouts/me", controllers.CreateUserWorkout(db))
-		auth.GET("/workouts/me", controllers.GetUserWorkouts(db))
-		auth.GET("/workouts/me/:id", controllers.GetUserWorkout(db))
-		auth.DELETE("/workouts/me/:id", controllers.DeleteWorkout(db))
+		// Exercise routes (general resources)
+		api.GET("/exercises", controllers.GetAllExercises(db))
+		api.POST("/exercises", controllers.CreateExercise(db))
+		api.GET("/exercises/:id", controllers.GetExercise(db))
+		api.DELETE("/exercises/:id", controllers.DeleteExercise(db))
 	}
 }
