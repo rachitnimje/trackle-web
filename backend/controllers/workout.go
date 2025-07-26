@@ -165,32 +165,24 @@ func GetUserWorkouts(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Fetch all workouts with their templates in a single query
 		var workouts []models.Workout
-		if err := db.Where("user_id = ?", userID).Find(&workouts).Error; err != nil {
+		if err := db.Where("user_id = ?", userID).
+			Preload("Template").
+			Order("created_at DESC").
+			Find(&workouts).Error; err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workouts", err)
 			return
 		}
 
-		// fetch all template names for that user
-		var templates []models.Template
-		if err := db.Where("user_id = ?", userID).Find(&templates).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve templates", err)
-			return
-		}
-
-		templateNames := make(map[uint]string)
-		for _, template := range templates {
-			templateNames[template.ID] = template.Name
-		}
-
-		// create response
+		// Create response directly from preloaded data
 		var userWorkoutsResponse []UserWorkoutsResponse
 		for _, workout := range workouts {
 			userWorkoutsResponse = append(userWorkoutsResponse, UserWorkoutsResponse{
 				WorkoutID:    workout.ID,
 				WorkoutName:  workout.Name,
 				TemplateID:   workout.TemplateID,
-				TemplateName: templateNames[workout.TemplateID],
+				TemplateName: workout.Template.Name, // Use preloaded template name
 				LoggedAt:     workout.CreatedAt,
 				Notes:        workout.Notes,
 			})
@@ -212,65 +204,55 @@ func GetUserWorkout(db *gorm.DB) gin.HandlerFunc {
 		// parse the workout ID with validation
 		workoutIDStr := c.Param("id")
 		if workoutIDStr == "" {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Template ID is required", nil)
+			utils.ErrorResponse(c, http.StatusBadRequest, "Workout ID is required", nil)
 			return
 		}
 
 		workoutID, err := strconv.ParseUint(workoutIDStr, 10, 32)
 		if err != nil || workoutID == 0 {
-			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid template ID", nil)
+			utils.ErrorResponse(c, http.StatusBadRequest, "Invalid workout ID", nil)
 			return
 		}
 
-		// check if the workout belongs to the user
+		// Fetch the workout with template in a single query
 		var workout models.Workout
-		if err := db.Where("id = ? and user_id = ?", workoutID, userID).
+		if err := db.Where("id = ? AND user_id = ?", workoutID, userID).
+			Preload("Template").
 			First(&workout).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "Failed to retrieve workout", err)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				utils.ErrorResponse(c, http.StatusNotFound, "Workout not found or access denied", nil)
+			} else {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workout", err)
+			}
 			return
 		}
 
-		// retrieve the workout entries
+		// Fetch all workout entries with their exercises in a single query
 		var workoutEntries []models.WorkoutEntry
 		if err := db.Where("workout_id = ?", workoutID).
+			Preload("Exercise").
 			Find(&workoutEntries).Error; err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workout entries", err)
 			return
 		}
 
+		// Map the entries to the response structure
 		var workoutEntriesResponse []UserWorkoutEntryResponse
-		for _, e := range workoutEntries {
+		for _, entry := range workoutEntries {
 			workoutEntriesResponse = append(workoutEntriesResponse, UserWorkoutEntryResponse{
-				ExerciseID: e.ExerciseID,
-				SetNumber:  e.SetNumber,
-				Reps:       e.Reps,
-				Weight:     e.Weight,
+				ExerciseID:   entry.ExerciseID,
+				ExerciseName: entry.Exercise.Name, // Access the preloaded Exercise data
+				SetNumber:    entry.SetNumber,
+				Reps:         entry.Reps,
+				Weight:       entry.Weight,
 			})
 		}
 
-		// retrieve the exercise name for each exercise
-		for i, e := range workoutEntriesResponse {
-			exerciseID := e.ExerciseID
-
-			var exercise models.Exercise
-			if err := db.First(&exercise, exerciseID).Error; err != nil {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve exercise", err)
-				return
-			}
-
-			workoutEntriesResponse[i].ExerciseName = exercise.Name
-		}
-
-		// retrieve the template name
-		var template models.Template
-		if err := db.Find(&template, workout.TemplateID).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve template", err)
-			return
-		}
-
+		// Build the final response
 		response := UserWorkoutResponse{
+			Model:        workout.Model,
 			TemplateID:   workout.TemplateID,
-			TemplateName: template.Name,
+			TemplateName: workout.Template.Name, // Access the preloaded Template data
 			WorkoutName:  workout.Name,
 			Notes:        workout.Notes,
 			Entries:      workoutEntriesResponse,
@@ -313,25 +295,31 @@ func DeleteWorkout(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Use transaction to ensure atomic deletion
+		tx := db.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
+		// Delete workout entries first
+		if err := tx.Where("workout_id = ?", workoutID).Delete(&models.WorkoutEntry{}).Error; err != nil {
+			tx.Rollback()
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout entries", err)
+			return
+		}
+
 		// Delete workout
-		if err := db.Delete(&workout).Error; err != nil {
+		if err := tx.Delete(&workout).Error; err != nil {
+			tx.Rollback()
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout", err)
 			return
 		}
 
-		// delete the workout entries with given workout id
-		var workoutEntries []models.WorkoutEntry
-		if err := db.Where("workout_id = ?", workoutID).Find(&workoutEntries).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				utils.ErrorResponse(c, http.StatusNotFound, "Workout entry not found", nil)
-			} else {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to find workout entries", err)
-			}
-			return
-		}
-
-		if err := db.Delete(&workoutEntries).Error; err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete workout entries", err)
+		// Commit the transaction
+		if err := tx.Commit().Error; err != nil {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to commit transaction", err)
 			return
 		}
 
