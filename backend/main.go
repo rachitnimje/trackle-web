@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/rachitnimje/trackle-web/config"
 	"github.com/rachitnimje/trackle-web/middleware"
 	"github.com/rachitnimje/trackle-web/routes"
@@ -12,9 +13,14 @@ import (
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	// Connect to database
 	db := config.ConnectDB()
-	
+
 	// Run migrations
 	config.MigrateDB(db)
 
@@ -32,7 +38,7 @@ func main() {
 	routes.SetupRoutes(r, db)
 
 	// Get port from environment or default to 8080
-	port := os.Getenv("PORT")
+	port := os.Getenv("SERVER_PORT")
 	if port == "" {
 		port = "8080"
 	}
