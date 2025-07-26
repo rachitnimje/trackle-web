@@ -36,15 +36,16 @@ func ErrorResponse(c *gin.Context, statusCode int, message string, err error) {
 	})
 }
 
-func PaginatedResponse(c *gin.Context, message string, data interface{}, page, limit int, total int64) {
+func PaginatedResponse(c *gin.Context, message string, data interface{}, page, limit int, totalItems int64) {
 	var totalPages int64
-	if total > 0 {
-		totalPages = int64(int((total + int64(limit) - 1) / int64(limit)))
+
+	if totalItems > 0 {
+		totalPages = (totalItems + int64(limit) - 1) / int64(limit)
 	} else {
 		totalPages = 0
 	}
 
-	hasNext := total < totalPages
+	hasNext := int64(page) < totalPages
 	hasPrev := page > 1
 
 	c.JSON(http.StatusOK, models.PaginatedResponse{
@@ -54,7 +55,7 @@ func PaginatedResponse(c *gin.Context, message string, data interface{}, page, l
 		Page:       page,
 		Limit:      limit,
 		TotalPages: totalPages,
-		Total:      total,
+		Total:      totalItems,
 		HasNext:    hasNext,
 		HasPrev:    hasPrev,
 	})

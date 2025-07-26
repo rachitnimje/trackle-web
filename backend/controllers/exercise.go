@@ -47,8 +47,8 @@ func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 			query = query.Where("name ILIKE ?", "%"+search+"%")
 		}
 
-		var total int64
-		if err := query.Count(&total).Error; err != nil {
+		var totalWorkouts int64
+		if err := query.Count(&totalWorkouts).Error; err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to count workouts", err)
 			return
 		}
@@ -59,7 +59,7 @@ func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		utils.PaginatedResponse(c, "Exercises retrieved successfully", workouts, page, limit, total)
+		utils.PaginatedResponse(c, "Exercises retrieved successfully", workouts, page, limit, totalWorkouts)
 	}
 }
 
