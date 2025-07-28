@@ -1,20 +1,14 @@
-import axios from 'axios';
+import { api } from './apiClient';
+import { ApiResponse, LoginResponseData, RegisterResponseData } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-export const login = async (email: string, password: string) => {
-  const response = await api.post('/auth/login', { email, password });
-  return response.data;
+export const login = async (email: string, password: string): Promise<ApiResponse<LoginResponseData>> => {
+  return api.post<LoginResponseData>('/auth/login', { email, password });
 };
 
-export const register = async (email: string, password: string, username: string) => {
-  const response = await api.post('/auth/register', { email, password, username });
-  return response.data;
+export const register = async (email: string, password: string, username: string): Promise<ApiResponse<RegisterResponseData>> => {
+  return api.post<RegisterResponseData>('/auth/register', { email, password, username });
+};
+
+export const checkAuth = async (): Promise<ApiResponse<{ authenticated: boolean }>> => {
+  return api.get<{ authenticated: boolean }>('/auth/check');
 };

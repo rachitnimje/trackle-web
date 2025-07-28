@@ -1,38 +1,22 @@
-import axios from 'axios';
+import { api } from './apiClient';
+import { ApiResponse, PaginatedResponse, Workout, CreateWorkoutRequest } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-export const getWorkouts = async (token: string) => {
-  const response = await api.get('/workouts', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.data;
+export const getWorkouts = async (): Promise<ApiResponse<Workout[]>> => {
+  return api.get<Workout[]>('/workouts');
 };
 
-export const getWorkout = async (id: string, token: string) => {
-  const response = await api.get(`/workouts/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.data;
+export const getWorkout = async (id: string): Promise<ApiResponse<Workout>> => {
+  return api.get<Workout>(`/workouts/${id}`);
 };
 
-export const createWorkout = async (workout: any, token: string) => {
-  const response = await api.post('/workouts', workout, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.data;
+export const createWorkout = async (workout: CreateWorkoutRequest): Promise<ApiResponse<Workout>> => {
+  return api.post<Workout>('/workouts', workout);
 };
 
-export const deleteWorkout = async (id: string, token: string) => {
-  const response = await api.delete(`/workouts/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return response.data;
+export const updateWorkout = async (id: string, workout: Partial<CreateWorkoutRequest>): Promise<ApiResponse<Workout>> => {
+  return api.put<Workout>(`/workouts/${id}`, workout);
+};
+
+export const deleteWorkout = async (id: string): Promise<ApiResponse<null>> => {
+  return api.delete<null>(`/workouts/${id}`);
 };
