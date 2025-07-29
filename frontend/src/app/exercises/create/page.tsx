@@ -93,24 +93,29 @@ export default function CreateExercisePage() {
     setSuccess(false);
     
     try {
-      // Prepare exercise data
+      // Prepare exercise data - ensure all required fields are strings, not undefined
       const exerciseData = {
         name,
         category,
-        description: description || undefined,
+        description: description || "", // Default to empty string for required fields
         primaryMuscles,
         secondaryMuscles: secondaryMuscles.length > 0 ? secondaryMuscles : undefined,
         equipment: equipment || undefined,
         instructions: instructions || undefined
       };
       
-      await createExercise(exerciseData);
-      setSuccess(true);
+      const response = await createExercise(exerciseData);
       
-      // Reset form after successful creation
-      setTimeout(() => {
-        router.push('/exercises');
-      }, 1500);
+      if (response.success) {
+        setSuccess(true);
+        
+        // Reset form after successful creation
+        setTimeout(() => {
+          router.push('/exercises');
+        }, 1500);
+      } else {
+        setError(response.error || 'Failed to create exercise');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to create exercise');
     } finally {

@@ -30,10 +30,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   getExercises, 
-  Exercise, 
   exerciseCategories, 
   muscleGroups, 
-  defaultExercises 
+  defaultExercises, 
+  ExtendedExercise 
 } from '../../api/exercises';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -43,7 +43,7 @@ import Cookies from 'js-cookie';
 
 export default function ExercisesPage() {
   const router = useRouter();
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExtendedExercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -63,8 +63,14 @@ export default function ExercisesPage() {
   useEffect(() => {
     const fetchExercises = async () => {
       try {
-        const data = await getExercises();
-        setExercises(data || defaultExercises);
+        const response = await getExercises();
+        if (response.success && response.data) {
+          setExercises(response.data || defaultExercises);
+        } else {
+          console.error('API response unsuccessful:', response.error);
+          setError('Failed to load exercises. Using default exercises instead.');
+          setExercises(defaultExercises);
+        }
       } catch (err) {
         console.error('Failed to fetch exercises:', err);
         setError('Failed to load exercises. Using default exercises instead.');
@@ -86,7 +92,7 @@ export default function ExercisesPage() {
     const matchesCategory = selectedCategory === '' || exercise.category === selectedCategory;
     
     const matchesMuscle = selectedMuscle === '' || 
-      exercise.primaryMuscles.includes(selectedMuscle) || 
+      (exercise.primaryMuscles && exercise.primaryMuscles.includes(selectedMuscle)) || 
       (exercise.secondaryMuscles && exercise.secondaryMuscles.includes(selectedMuscle));
     
     return matchesSearch && matchesCategory && matchesMuscle;
@@ -299,7 +305,7 @@ export default function ExercisesPage() {
                       Primary Muscles:
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, mb: 1 }}>
-                      {exercise.primaryMuscles.map((muscle) => (
+                      {exercise.primaryMuscles && exercise.primaryMuscles.map((muscle: string) => (
                         <Chip 
                           key={muscle} 
                           label={muscle} 
@@ -316,7 +322,7 @@ export default function ExercisesPage() {
                           Secondary Muscles:
                         </Typography>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                          {exercise.secondaryMuscles.map((muscle) => (
+                          {exercise.secondaryMuscles.map((muscle: string) => (
                             <Chip 
                               key={muscle} 
                               label={muscle} 
