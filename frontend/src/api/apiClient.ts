@@ -1,8 +1,9 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
 import Cookies from 'js-cookie';
-import { ApiResponse, PaginatedResponse } from './types';
+import { ApiResponse, PaginatedResponse, ErrorResponse } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const API_PREFIX = '/api/v1'; // Add API prefix for backend routes
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -25,50 +26,87 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     const response = error.response;
+    const errorResponse: ErrorResponse = {
+      success: false,
+      message: 'An error occurred',
+      error: error.message,
+      status: response?.status || 0
+    };
     
-    // Handle authentication errors
-    if (response?.status === 401) {
-      // Redirect to login if running on client
-      if (typeof window !== 'undefined') {
-        Cookies.remove('token');
-        window.location.href = '/auth/login';
+    // Handle different types of errors
+    if (response) {
+      switch (response.status) {
+        case 401:
+          // Unauthorized - Redirect to login if running on client
+          errorResponse.message = 'You need to log in to access this resource';
+          if (typeof window !== 'undefined') {
+            Cookies.remove('token');
+            window.location.href = '/auth/login';
+          }
+          break;
+        case 404:
+          // Not Found - You might want to handle this specifically
+          errorResponse.message = 'The requested resource was not found';
+          console.error('Resource not found:', error.config?.url);
+          break;
+        case 500:
+          // Server Error
+          errorResponse.message = 'A server error occurred, please try again later';
+          console.error('Server error occurred:', error.message);
+          break;
+        default:
+          // Other errors
+          errorResponse.message = `Error: ${response.status} - ${error.message}`;
+          console.error(`API Error (${response.status}):`, error.message);
       }
+    } else {
+      // Network errors (no response from server)
+      errorResponse.message = 'Network error: Unable to connect to the server';
+      console.error('Network error:', error.message);
     }
+    
+    // Attach the error info to the error object for easier access in components
+    (error as any).errorInfo = errorResponse;
     
     return Promise.reject(error);
   }
 );
 
 // Generic API request methods
-export async function get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
-  const response = await apiClient.get<ApiResponse<T>>(url, config);
-  return response.data;
-}
-
-export async function getPaginated<T>(url: string, config?: AxiosRequestConfig): Promise<PaginatedResponse<T>> {
-  const response = await apiClient.get<PaginatedResponse<T>>(url, config);
-  return response.data;
-}
-
-export async function post<T, D = any>(url: string, data?: D, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
-  const response = await apiClient.post<ApiResponse<T>>(url, data, config);
-  return response.data;
-}
-
-export async function put<T, D = any>(url: string, data?: D, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
-  const response = await apiClient.put<ApiResponse<T>>(url, data, config);
-  return response.data;
-}
-
-export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
-  const response = await apiClient.delete<ApiResponse<T>>(url, config);
-  return response.data;
-}
-
 export const api = {
-  get,
-  getPaginated,
-  post,
-  put,
-  delete: del,
+  get: async function<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+    // Add API_PREFIX to all routes except login, register and other public endpoints
+    const fullUrl = url.startsWith('/login') || url.startsWith('/register') ? 
+      url : `${API_PREFIX}${url}`;
+    const response = await apiClient.get<ApiResponse<T>>(fullUrl, config);
+    return response.data;
+  },
+  
+  post: async function<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+    const fullUrl = url.startsWith('/login') || url.startsWith('/register') ? 
+      url : `${API_PREFIX}${url}`;
+    const response = await apiClient.post<ApiResponse<T>>(fullUrl, data, config);
+    return response.data;
+  },
+  
+  put: async function<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+    const fullUrl = url.startsWith('/login') || url.startsWith('/register') ? 
+      url : `${API_PREFIX}${url}`;
+    const response = await apiClient.put<ApiResponse<T>>(fullUrl, data, config);
+    return response.data;
+  },
+  
+  delete: async function<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+    const fullUrl = url.startsWith('/login') || url.startsWith('/register') ? 
+      url : `${API_PREFIX}${url}`;
+    const response = await apiClient.delete<ApiResponse<T>>(fullUrl, config);
+    return response.data;
+  },
+  
+  getPaginated: async function<T>(url: string, config?: AxiosRequestConfig): Promise<PaginatedResponse<T>> {
+    const fullUrl = url.startsWith('/login') || url.startsWith('/register') ? 
+      url : `${API_PREFIX}${url}`;
+    const response = await apiClient.get<PaginatedResponse<T>>(fullUrl, config);
+    return response.data;
+  }
 };

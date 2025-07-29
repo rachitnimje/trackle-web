@@ -3,6 +3,14 @@ export interface ApiResponse<T> {
   message: string;
   data: T;
   error?: string;
+  status?: number; // HTTP status code for error handling
+}
+
+export interface ErrorResponse {
+  success: boolean;
+  message: string;
+  error: string;
+  status: number; // HTTP status code
 }
 
 export interface PaginatedResponse<T> {

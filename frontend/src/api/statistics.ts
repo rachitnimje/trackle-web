@@ -45,7 +45,7 @@ export const getWorkoutStats = async (timeRange: string = 'month'): Promise<ApiR
 };
 
 // Get exercise progression data (weights over time)
-export const getExerciseProgress = async (exerciseId: string, timeRange: string = 'month'): Promise<ApiResponse<ExerciseProgress>> => {
+export const getExerciseProgress = async (exerciseId: number, timeRange: string = 'month'): Promise<ApiResponse<ExerciseProgress>> => {
   return api.get<ExerciseProgress>(`/stats/exercises/${exerciseId}?timeRange=${timeRange}`);
 };
 
