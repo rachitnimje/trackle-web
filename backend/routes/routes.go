@@ -41,6 +41,11 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB) {
 		api.PUT("/exercises/:id", controllers.UpdateExercise(db))
 		api.DELETE("/exercises/:id", controllers.DeleteExercise(db))
 		
+		// Exercise metadata routes
+		api.GET("/exercises/categories", controllers.GetExerciseCategories)
+		api.GET("/exercises/muscles", controllers.GetPrimaryMuscles)
+		api.GET("/exercises/equipment", controllers.GetEquipmentTypes)
+		
 		// Statistics routes
 		api.GET("/stats/workouts", controllers.GetWorkoutStats(db))
 		api.GET("/stats/exercises/:id", controllers.GetExerciseProgress(db))

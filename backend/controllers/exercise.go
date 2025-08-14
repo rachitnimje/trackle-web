@@ -11,10 +11,83 @@ import (
 	"github.com/rachitnimje/trackle-web/utils"
 )
 
+// Predefined categories, muscles, and equipment
+var exerciseCategories = []string{
+	"Strength",
+	"Cardio",
+	"Flexibility",
+	"Balance",
+	"Plyometric",
+	"Powerlifting",
+	"Olympic Weightlifting",
+	"Calisthenics",
+	"Functional",
+}
+
+var primaryMuscles = []string{
+	"Chest",
+	"Back",
+	"Shoulders",
+	"Biceps",
+	"Triceps",
+	"Forearms",
+	"Quadriceps",
+	"Hamstrings",
+	"Calves",
+	"Glutes",
+	"Abdominals",
+	"Obliques",
+	"Trapezius",
+	"Lats",
+	"Rhomboids",
+	"Deltoids",
+	"Lower Back",
+}
+
+var equipmentTypes = []string{
+	"Barbell",
+	"Dumbbell",
+	"Kettlebell",
+	"Cable Machine",
+	"Smith Machine",
+	"Resistance Band",
+	"Bodyweight",
+	"Machine",
+	"TRX/Suspension",
+	"Medicine Ball",
+	"Stability Ball",
+	"Bench",
+	"Pull-up Bar",
+	"Treadmill",
+	"Stationary Bike",
+	"None",
+}
+
 type CreateExerciseRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
+	Name          string `json:"name" binding:"required"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	PrimaryMuscle string `json:"primary_muscle"`
+	Equipment     string `json:"equipment"`
+}
+
+type ExerciseResponse struct {
+	ID            string `json:"id" binding:"required"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+	Name          string `json:"name" binding:"required"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	PrimaryMuscle string `json:"primary_muscle"`
+	Equipment     string `json:"equipment"`
+}
+
+type UpdateExerciseRequest struct {
+	Name          string `json:"name" binding:"required"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	PrimaryMuscle string `json:"primary_muscle"`
+	Equipment     string `json:"equipment"`
 }
 
 func CreateExercise(db *gorm.DB) gin.HandlerFunc {
@@ -48,9 +121,11 @@ func CreateExercise(db *gorm.DB) gin.HandlerFunc {
 
 		// create exercise model
 		exercise := models.Exercise{
-			Name:        createExerciseRequest.Name,
-			Description: createExerciseRequest.Description,
-			Category:    createExerciseRequest.Category,
+			Name:          createExerciseRequest.Name,
+			Description:   createExerciseRequest.Description,
+			Category:      createExerciseRequest.Category,
+			PrimaryMuscle: createExerciseRequest.PrimaryMuscle,
+			Equipment:     createExerciseRequest.Equipment,
 		}
 
 		// Use transaction manager for atomic operation
@@ -89,32 +164,51 @@ func GetAllExercises(db *gorm.DB) gin.HandlerFunc {
 
 		category := c.Query("category")
 		search := c.Query("search")
+		muscle := c.Query("muscle")
 
 		query := db.Model(&models.Exercise{})
 
-		// apply search and category filters
+		// apply search, category, and muscle filters
 		if category != "" {
 			query = query.Where("category = ?", category)
 		}
 		if search != "" {
 			query = query.Where("name ILIKE ?", "%"+search+"%")
 		}
+		if muscle != "" {
+			query = query.Where("primary_muscle = ?", muscle)
+		}
 
-		var totalWorkouts int64
-		if err := query.Count(&totalWorkouts).Error; err != nil {
-			appErr := utils.NewDatabaseError("Failed to count workouts", err)
+		var totalExercises int64
+		if err := query.Count(&totalExercises).Error; err != nil {
+			appErr := utils.NewDatabaseError("Failed to count exercises", err)
 			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		var workouts []models.Exercise
-		if err := query.Offset(offset).Limit(limit).Find(&workouts).Error; err != nil {
-			appErr := utils.NewDatabaseError("Failed to fetch workouts", err)
+		var exercises []models.Exercise
+		if err := query.Offset(offset).Limit(limit).Find(&exercises).Error; err != nil {
+			appErr := utils.NewDatabaseError("Failed to fetch exercises", err)
 			utils.ErrorResponse(c, appErr.StatusCode, appErr.Message, appErr)
 			return
 		}
 
-		utils.PaginatedResponse(c, "Exercises retrieved successfully", workouts, page, limit, totalWorkouts)
+		var getExercisesResponse []ExerciseResponse
+		for _, exercise := range exercises {
+			exerciseResponse := ExerciseResponse{
+				ID:            strconv.Itoa(int(exercise.ID)),
+				CreatedAt:     exercise.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+				UpdatedAt:     exercise.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+				Name:          exercise.Name,
+				Description:   exercise.Description,
+				Category:      exercise.Category,
+				PrimaryMuscle: exercise.PrimaryMuscle,
+				Equipment:     exercise.Equipment,
+			}
+			getExercisesResponse = append(getExercisesResponse, exerciseResponse)
+		}
+
+		utils.PaginatedResponse(c, "Exercises retrieved successfully", getExercisesResponse, page, limit, totalExercises)
 	}
 }
 
@@ -140,14 +234,20 @@ func GetExercise(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		utils.SuccessResponse(c, "Exercise retrieved successfully", exercise)
-	}
-}
+		// Map exercise model to ExerciseResponse DTO
+		exerciseResponse := ExerciseResponse{
+			ID:            strconv.Itoa(int(exercise.ID)),
+			CreatedAt:     exercise.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt:     exercise.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			Name:          exercise.Name,
+			Description:   exercise.Description,
+			Category:      exercise.Category,
+			PrimaryMuscle: exercise.PrimaryMuscle,
+			Equipment:     exercise.Equipment,
+		}
 
-type UpdateExerciseRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
+		utils.SuccessResponse(c, "Exercise retrieved successfully", exerciseResponse)
+	}
 }
 
 func UpdateExercise(db *gorm.DB) gin.HandlerFunc {
@@ -207,6 +307,8 @@ func UpdateExercise(db *gorm.DB) gin.HandlerFunc {
 		exercise.Name = updateExerciseRequest.Name
 		exercise.Description = updateExerciseRequest.Description
 		exercise.Category = updateExerciseRequest.Category
+		exercise.PrimaryMuscle = updateExerciseRequest.PrimaryMuscle
+		exercise.Equipment = updateExerciseRequest.Equipment
 
 		// Use transaction manager for atomic operation
 		var updatedExercise models.Exercise
@@ -265,4 +367,16 @@ func DeleteExercise(db *gorm.DB) gin.HandlerFunc {
 
 		utils.SuccessResponse(c, "Exercise deleted successfully", nil)
 	}
+}
+
+func GetExerciseCategories(c *gin.Context) {
+	utils.SuccessResponse(c, "Exercise categories retrieved successfully", exerciseCategories)
+}
+
+func GetPrimaryMuscles(c *gin.Context) {
+	utils.SuccessResponse(c, "Primary muscles retrieved successfully", primaryMuscles)
+}
+
+func GetEquipmentTypes(c *gin.Context) {
+	utils.SuccessResponse(c, "Equipment types retrieved successfully", equipmentTypes)
 }

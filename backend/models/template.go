@@ -4,9 +4,11 @@ import "gorm.io/gorm"
 
 type Exercise struct {
 	gorm.Model
-	Name        string `json:"name" gorm:"not null"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
+	Name          string `json:"name" gorm:"not null"`
+	Description   string `json:"description"`
+	Category      string `json:"category"`
+	PrimaryMuscle string `json:"primary_muscle"`
+	Equipment     string `json:"equipment"`
 }
 
 type Template struct {
