@@ -1,117 +1,177 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Container, 
-  Typography, 
-  Box, 
-  Button, 
-  Paper, 
-  Grid, 
-  Card, 
-  CardContent, 
-  CardActions, 
-  TextField, 
-  InputAdornment, 
-  IconButton, 
-  Chip, 
-  FormControl, 
-  InputLabel, 
-  Select, 
-  MenuItem, 
-  CircularProgress, 
-  Breadcrumbs, 
-  Link as MuiLink, 
-  Divider,
+import React, { useState, useEffect } from "react";
+import {
+  Container,
+  Typography,
+  Box,
+  Button,
+  Paper,
+  Card,
+  CardContent,
+  TextField,
+  InputAdornment,
+  Chip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  CircularProgress,
+  Breadcrumbs,
+  Link as MuiLink,
   Pagination,
-  Alert
-} from '@mui/material';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { 
-  getExercises, 
-  exerciseCategories, 
-  muscleGroups, 
-  defaultExercises, 
-  ExtendedExercise 
-} from '../../api/exercises';
-import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import AddIcon from '@mui/icons-material/Add';
-import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
-import Cookies from 'js-cookie';
+  Alert,
+} from "@mui/material";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  getExercises,
+  getExerciseCategories,
+  getPrimaryMuscles,
+  ExtendedExercise,
+} from "../../api/exercises";
+import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
+import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
+import Cookies from "js-cookie";
 
 export default function ExercisesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [exercises, setExercises] = useState<ExtendedExercise[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Search and filters
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedMuscle, setSelectedMuscle] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  
-  // Pagination
-  const [page, setPage] = useState(1);
-  const exercisesPerPage = 12;
-  
+  const [error, setError] = useState("");
+
+  // API data
+  const [categories, setCategories] = useState<string[]>([]);
+  const [muscles, setMuscles] = useState<string[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Search and filters - initialize from URL params
+  const [searchTerm, setSearchTerm] = useState(
+    searchParams.get("search") || ""
+  );
+  const [selectedCategory, setSelectedCategory] = useState(
+    searchParams.get("category") || ""
+  );
+  const [selectedMuscle, setSelectedMuscle] = useState(
+    searchParams.get("muscle") || ""
+  );
+
+  // Pagination - initialize from URL params, default to 1
+  const [page, setPage] = useState(() => {
+    const pageParam = searchParams.get("page");
+    return pageParam ? parseInt(pageParam) : 1;
+  });
+  const exercisesPerPage = 9;
+
   // Check if user is logged in
-  const isLoggedIn = !!Cookies.get('token');
+  const isLoggedIn = !!Cookies.get("token");
+
+  // Redirect to page 1 if no page parameter is present
+  useEffect(() => {
+    const currentPage = searchParams.get("page");
+    if (!currentPage) {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      if (searchTerm) params.set("search", searchTerm);
+      if (selectedCategory) params.set("category", selectedCategory);
+      if (selectedMuscle) params.set("muscle", selectedMuscle);
+      
+      router.replace(`/exercises?${params.toString()}`, { scroll: false });
+      return;
+    }
+  }, [searchParams, searchTerm, selectedCategory, selectedMuscle, router]);
 
   useEffect(() => {
-    const fetchExercises = async () => {
+    const fetchData = async () => {
       try {
-        const response = await getExercises();
-        if (response.success && response.data) {
-          setExercises(response.data || defaultExercises);
+        const [exercisesResponse, categoriesResponse, musclesResponse] =
+          await Promise.all([
+            getExercises(
+              page,
+              exercisesPerPage,
+              selectedCategory || undefined,
+              searchTerm || undefined,
+              selectedMuscle || undefined
+            ),
+            getExerciseCategories(),
+            getPrimaryMuscles(),
+          ]);
+
+        if (exercisesResponse.success && exercisesResponse.data) {
+          console.log("Exercises response:", exercisesResponse.data);
+          setExercises(exercisesResponse.data);
+          setTotalCount(exercisesResponse.total || 0);
         } else {
-          console.error('API response unsuccessful:', response.error);
-          setError('Failed to load exercises. Using default exercises instead.');
-          setExercises(defaultExercises);
+          console.error("API response unsuccessful:", exercisesResponse.error);
+          setError("Failed to load exercises.");
+          setExercises([]);
+          setTotalCount(0);
+        }
+
+        if (categoriesResponse.success && categoriesResponse.data) {
+          setCategories(categoriesResponse.data);
+        }
+
+        if (musclesResponse.success && musclesResponse.data) {
+          setMuscles(musclesResponse.data);
         }
       } catch (err) {
-        console.error('Failed to fetch exercises:', err);
-        setError('Failed to load exercises. Using default exercises instead.');
-        setExercises(defaultExercises);
+        console.error("Failed to fetch data:", err);
+        setError("Failed to load data.");
+        setExercises([]);
+        setTotalCount(0);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchExercises();
-  }, []);
+    fetchData();
 
-  // Filter exercises based on search term and filters
-  const filteredExercises = exercises.filter((exercise) => {
-    const matchesSearch = searchTerm === '' || 
-      exercise.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (exercise.description && exercise.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesCategory = selectedCategory === '' || exercise.category === selectedCategory;
-    
-    const matchesMuscle = selectedMuscle === '' || 
-      (exercise.primaryMuscles && exercise.primaryMuscles.includes(selectedMuscle)) || 
-      (exercise.secondaryMuscles && exercise.secondaryMuscles.includes(selectedMuscle));
-    
-    return matchesSearch && matchesCategory && matchesMuscle;
-  });
+    // Always update URL with current filters including page
+    const params = new URLSearchParams();
+    params.set("page", page.toString()); // Always include page parameter
+    if (searchTerm) params.set("search", searchTerm);
+    if (selectedCategory) params.set("category", selectedCategory);
+    if (selectedMuscle) params.set("muscle", selectedMuscle);
 
-  // Paginate exercises
-  const indexOfLastExercise = page * exercisesPerPage;
-  const indexOfFirstExercise = indexOfLastExercise - exercisesPerPage;
-  const currentExercises = filteredExercises.slice(indexOfFirstExercise, indexOfLastExercise);
-  const pageCount = Math.ceil(filteredExercises.length / exercisesPerPage);
+    const newUrl = `?${params.toString()}`;
+    router.replace(`/exercises${newUrl}`, { scroll: false });
+  }, [page, selectedCategory, searchTerm, selectedMuscle, router]);
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+  // Server-side pagination - exercises are already filtered and paginated
+  const pageCount = Math.ceil(totalCount / exercisesPerPage);
+
+  const handlePageChange = (
+    event: React.ChangeEvent<unknown>,
+    value: number
+  ) => {
     setPage(value);
     window.scrollTo(0, 0);
   };
 
+  const handleCategoryChange = (value: string) => {
+    setSelectedCategory(value);
+    setPage(1);
+  };
+
+  const handleMuscleChange = (value: string) => {
+    setSelectedMuscle(value);
+    setPage(1);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setPage(1);
+  };
+
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+      <Container
+        maxWidth="lg"
+        sx={{ py: 4, display: "flex", justifyContent: "center" }}
+      >
         <CircularProgress />
       </Container>
     );
@@ -125,13 +185,20 @@ export default function ExercisesPage() {
         </MuiLink>
         <Typography color="text.primary">Exercises</Typography>
       </Breadcrumbs>
-      
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 4,
+        }}
+      >
         <Typography variant="h4" component="h1" fontWeight={700}>
-          <FitnessCenterIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+          <FitnessCenterIcon sx={{ mr: 1, verticalAlign: "middle" }} />
           Exercise Library
         </Typography>
-        
+
         {isLoggedIn && (
           <Button
             component={Link}
@@ -144,20 +211,26 @@ export default function ExercisesPage() {
           </Button>
         )}
       </Box>
-      
+
       {error && (
         <Alert severity="info" sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
-      
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 2 }}>
+
+      <Paper sx={{ p: 2, mb: 4 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            gap: 2,
+          }}
+        >
           <TextField
             fullWidth
             placeholder="Search exercises..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -166,77 +239,82 @@ export default function ExercisesPage() {
               ),
             }}
           />
-          
-          <Button
-            variant="outlined"
-            startIcon={<FilterListIcon />}
-            onClick={() => setShowFilters(!showFilters)}
-            sx={{ minWidth: '120px' }}
-          >
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </Button>
         </Box>
-        
-        {showFilters && (
-          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Category</InputLabel>
-              <Select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                label="Category"
-              >
-                <MenuItem value="">All Categories</MenuItem>
-                {exerciseCategories.map((category) => (
-                  <MenuItem key={category} value={category}>
-                    {category}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <FormControl fullWidth>
-              <InputLabel>Muscle Group</InputLabel>
-              <Select
-                value={selectedMuscle}
-                onChange={(e) => setSelectedMuscle(e.target.value)}
-                label="Muscle Group"
-              >
-                <MenuItem value="">All Muscle Groups</MenuItem>
-                {muscleGroups.map((muscle) => (
-                  <MenuItem key={muscle} value={muscle}>
-                    {muscle}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        )}
-        
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            {filteredExercises.length} {filteredExercises.length === 1 ? 'exercise' : 'exercises'} found
-          </Typography>
-          
-          {showFilters && (
-            <Button 
-              variant="text" 
-              size="small" 
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedCategory('');
-                setSelectedMuscle('');
-                setPage(1);
+
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", md: "row" },
+            gap: 2,
+            alignItems: "flex-start",
+          }}
+        >
+          <FormControl fullWidth>
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={selectedCategory}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+              label="Category"
+            >
+              <MenuItem value="">All Categories</MenuItem>
+              {categories.map((category) => (
+                <MenuItem key={category} value={category}>
+                  {category}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth>
+            <InputLabel>Muscle Group</InputLabel>
+            <Select
+              value={selectedMuscle}
+              onChange={(e) => handleMuscleChange(e.target.value)}
+              label="Muscle Group"
+              MenuProps={{
+                PaperProps: {
+                  style: {
+                    maxHeight: 300,
+                    width: 250,
+                  },
+                },
+                anchorOrigin: {
+                  vertical: "bottom",
+                  horizontal: "left",
+                },
+                transformOrigin: {
+                  vertical: "top",
+                  horizontal: "left",
+                },
               }}
             >
-              Clear Filters
-            </Button>
-          )}
+              <MenuItem value="">All Muscle Groups</MenuItem>
+              {muscles.map((muscle) => (
+                <MenuItem key={muscle} value={muscle}>
+                  {muscle}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button
+            variant="text"
+            size="large"
+            onClick={() => {
+              setSearchTerm("");
+              setSelectedCategory("");
+              setSelectedMuscle("");
+              setPage(1);
+            }}
+            sx={{ minWidth: "80px", alignSelf: "center" }}
+          >
+            Clear
+          </Button>
         </Box>
       </Paper>
-      
-      {currentExercises.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
+
+      {exercises.length === 0 ? (
+        <Paper sx={{ p: 4, textAlign: "center" }}>
           <Typography variant="h6" gutterBottom>
             No exercises found
           </Typography>
@@ -257,105 +335,100 @@ export default function ExercisesPage() {
         </Paper>
       ) : (
         <>
-          <Box sx={{ 
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-            gap: 3,
-            mb: 4
-          }}>
-            {currentExercises.map((exercise) => (
-              <Card 
-                key={exercise.id}
-                sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: 4
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "repeat(2, 1fr)",
+                md: "repeat(3, 1fr)",
+              },
+              gap: 3,
+              mb: 4,
+            }}
+          >
+            {exercises.map((exercise, index) => (
+              <Card
+                key={exercise.id || `exercise-${index}`}
+                sx={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  cursor: "pointer",
+                  "&:hover": {
+                    transform: "translateY(-4px)",
+                    boxShadow: 4,
+                  },
+                }}
+                onClick={() => {
+                  console.log("Exercise clicked:", exercise.id, exercise);
+                  if (exercise.id) {
+                    router.push(`/exercises/${exercise.id}`);
+                  } else {
+                    console.error("Exercise ID is missing:", exercise);
                   }
                 }}
               >
-                  <CardContent sx={{ flexGrow: 1 }}>
-                    <Typography variant="h6" component="h2" gutterBottom>
-                      {exercise.name}
-                    </Typography>
-                    
-                    <Chip 
-                      label={exercise.category} 
-                      color="primary" 
-                      size="small" 
-                      sx={{ mb: 2 }} 
-                    />
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {exercise.description ? (
-                        exercise.description.length > 100 
-                          ? `${exercise.description.substring(0, 100)}...` 
-                          : exercise.description
-                      ) : (
-                        "No description available"
-                      )}
-                    </Typography>
-                    
-                    <Divider sx={{ my: 1 }} />
-                    
-                    <Typography variant="body2" fontWeight={500} sx={{ mt: 1 }}>
-                      Primary Muscles:
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, mb: 1 }}>
-                      {exercise.primaryMuscles && exercise.primaryMuscles.map((muscle: string) => (
-                        <Chip 
-                          key={muscle} 
-                          label={muscle} 
-                          size="small" 
-                          variant="outlined" 
-                          sx={{ mr: 0.5, mb: 0.5 }} 
-                        />
-                      ))}
-                    </Box>
-                    
-                    {exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0 && (
-                      <>
-                        <Typography variant="body2" fontWeight={500}>
-                          Secondary Muscles:
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                          {exercise.secondaryMuscles.map((muscle: string) => (
-                            <Chip 
-                              key={muscle} 
-                              label={muscle} 
-                              size="small" 
-                              variant="outlined" 
-                              color="secondary"
-                              sx={{ mr: 0.5, mb: 0.5 }} 
-                            />
-                          ))}
-                        </Box>
-                      </>
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <Typography variant="h6" component="h2" gutterBottom>
+                    {exercise.name || "Unnamed Exercise"}
+                  </Typography>
+
+                  <Box
+                    sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}
+                  >
+                    {exercise.category && (
+                      <Chip
+                        label={exercise.category}
+                        color="primary"
+                        size="small"
+                      />
                     )}
-                  </CardContent>
-                  
-                  <CardActions sx={{ p: 2, pt: 0 }}>
-                    <Button 
-                      size="small" 
-                      onClick={() => router.push(`/exercises/${exercise.id}`)}
-                    >
-                      View Details
-                    </Button>
-                  </CardActions>
-                </Card>
+
+                    {exercise.primary_muscle && (
+                      <Chip
+                        label={exercise.primary_muscle}
+                        color="secondary"
+                        size="small"
+                      />
+                    )}
+
+                    {exercise.equipment &&
+                      exercise.equipment.toLowerCase() !== "none" && (
+                        <Chip
+                          label={exercise.equipment}
+                          variant="outlined"
+                          size="small"
+                        />
+                      )}
+                  </Box>
+
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 2 }}
+                  >
+                    {exercise.description
+                      ? exercise.description.length > 100
+                        ? `${exercise.description.substring(0, 100)}...`
+                        : exercise.description
+                      : "No description available"}
+                  </Typography>
+                </CardContent>
+              </Card>
             ))}
           </Box>
-          
+
           {pageCount > 1 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 2 }}>
-              <Pagination 
-                count={pageCount} 
-                page={page} 
-                onChange={handlePageChange} 
-                color="primary" 
+            <Box
+              sx={{ display: "flex", justifyContent: "center", mt: 4, mb: 2 }}
+            >
+              <Pagination
+                count={pageCount}
+                page={page}
+                onChange={handlePageChange}
+                color="primary"
               />
             </Box>
           )}

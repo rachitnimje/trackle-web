@@ -5,17 +5,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getTemplate, deleteTemplate } from '../../../api/templates';
 import Link from 'next/link';
-
-function getTokenFromCookie() {
-  const match = document.cookie.match(/(^| )token=([^;]+)/);
-  return match ? match[2] : '';
-}
+import Cookies from 'js-cookie';
+import { Template } from '../../../api/types';
 
 export default function TemplateDetails() {
   const params = useParams();
   const router = useRouter();
   const templateId = params?.id;
-  const [template, setTemplate] = useState<any>(null);
+  const [template, setTemplate] = useState<Template | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -24,28 +21,43 @@ export default function TemplateDetails() {
       setLoading(true);
       setError('');
       try {
-        const token = getTokenFromCookie();
-        const response = await getTemplate(templateId as string, token);
-        setTemplate(response.template || response);
+        const token = Cookies.get('token');
+        if (!token) {
+          router.push('/auth/login');
+          return;
+        }
+        
+        const response = await getTemplate(templateId as string);
+        
+        if (response.success && response.data) {
+          setTemplate(response.data);
+        } else {
+          setError(response.error || response.message || 'Failed to load template');
+        }
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load template');
+        const errorInfo = err.errorInfo || {};
+        setError(errorInfo.error || errorInfo.message || 'Failed to load template');
       } finally {
         setLoading(false);
       }
     };
     if (templateId) fetchTemplate();
-  }, [templateId]);
+  }, [templateId, router]);
 
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this template?")) {
       return;
     }
     try {
-      const token = getTokenFromCookie();
-      await deleteTemplate(templateId as string, token);
-      router.push('/templates');
+      const response = await deleteTemplate(templateId as string);
+      if (response.success) {
+        router.push('/templates');
+      } else {
+        setError(response.error || response.message || 'Failed to delete template');
+      }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete template');
+      const errorInfo = err.errorInfo || {};
+      setError(errorInfo.error || errorInfo.message || 'Failed to delete template');
     }
   };
 
@@ -62,13 +74,19 @@ export default function TemplateDetails() {
             <Button variant="outlined" color="error" onClick={handleDelete}>Delete Template</Button>
           </Box>
           
+          {template.description && (
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              {template.description}
+            </Typography>
+          )}
+          
           <Typography variant="h6" mt={3} mb={1}>Exercises</Typography>
           {template.exercises && template.exercises.length > 0 ? (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {template.exercises.map((exercise: any, index: number) => (
+              {template.exercises.map((exercise: {exercise?: {name?: string}, name?: string, sets: number}, index: number) => (
                 <Chip 
                   key={index}
-                  label={`${exercise.name || exercise.exercise?.name} - ${exercise.sets} sets`} 
+                  label={`${exercise.exercise?.name || exercise.name} - ${exercise.sets} sets`} 
                   color="primary"
                 />
               ))}

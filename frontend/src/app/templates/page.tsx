@@ -11,9 +11,10 @@ import ListAltIcon from '@mui/icons-material/ListAlt';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import Cookies from 'js-cookie';
 import { useRouter } from 'next/navigation';
+import { Template } from '../../api/types';
 
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -28,10 +29,19 @@ export default function TemplatesPage() {
           router.push('/auth/login');
           return;
         }
-        const data = await getTemplates(token);
-        setTemplates(data.templates || []);
+        
+        // Backend returns paginated response structure
+        const response = await getTemplates();
+        
+        if (response.success && response.data) {
+          setTemplates(Array.isArray(response.data) ? response.data : []);
+        } else {
+          setError(response.error || response.message || 'Failed to load templates');
+        }
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load templates');
+        // Handle error from error interceptor
+        const errorInfo = err.errorInfo || {};
+        setError(errorInfo.error || errorInfo.message || 'Failed to load templates');
       } finally {
         setLoading(false);
       }
@@ -127,15 +137,15 @@ export default function TemplatesPage() {
                       onClick={async () => {
                         if (window.confirm('Are you sure you want to delete this template?')) {
                           try {
-                            const token = Cookies.get('token');
-                            if (!token) {
-                              router.push('/auth/login');
-                              return;
+                            const response = await deleteTemplate(template.id.toString());
+                            if (response.success) {
+                              setTemplates(prev => prev.filter(t => t.id !== template.id));
+                            } else {
+                              setError(response.error || response.message || 'Failed to delete template');
                             }
-                            await deleteTemplate(template.id, token);
-                            setTemplates(prev => prev.filter(t => t.id !== template.id));
                           } catch (err: any) {
-                            setError(err.response?.data?.message || 'Failed to delete template');
+                            const errorInfo = err.errorInfo || {};
+                            setError(errorInfo.error || errorInfo.message || 'Failed to delete template');
                           }
                         }
                       }}
@@ -153,10 +163,15 @@ export default function TemplatesPage() {
                 </Box>
                 
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {template.exercises?.length > 0 
-                    ? template.exercises.slice(0, 3).join(', ') + (template.exercises.length > 3 ? '...' : '')
-                    : 'No exercises added yet'}
+                  {template.description || 'No description provided'}
                 </Typography>
+                
+                {template.exercises?.length > 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
+                    Exercises: {template.exercises.slice(0, 3).map((ex: {exercise?: {name?: string}, name?: string}) => ex.exercise?.name || ex.name).filter(Boolean).join(', ')}
+                    {template.exercises.length > 3 ? '...' : ''}
+                  </Typography>
+                )}
               </Box>
               
               <Divider />

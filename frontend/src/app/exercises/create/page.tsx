@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Container, 
   Typography, 
@@ -12,8 +12,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Chip,
-  Autocomplete,
   Alert,
   CircularProgress,
   Breadcrumbs,
@@ -23,9 +21,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   createExercise, 
-  exerciseCategories, 
-  muscleGroups, 
-  equipmentTypes 
+  getExerciseCategories,
+  getPrimaryMuscles,
+  getEquipmentTypes
 } from '../../../api/exercises';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
@@ -41,18 +39,55 @@ export default function CreateExercisePage() {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
-  const [primaryMuscles, setPrimaryMuscles] = useState<string[]>([]);
-  const [secondaryMuscles, setSecondaryMuscles] = useState<string[]>([]);
+  const [primaryMuscle, setPrimaryMuscle] = useState('');
   const [equipment, setEquipment] = useState('');
-  const [instructions, setInstructions] = useState('');
+  
+  // Options from API
+  const [categories, setCategories] = useState<string[]>([]);
+  const [muscles, setMuscles] = useState<string[]>([]);
+  const [equipmentOptions, setEquipmentOptions] = useState<string[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
   
   // Form validation
   const [nameError, setNameError] = useState('');
   const [categoryError, setCategoryError] = useState('');
-  const [primaryMusclesError, setPrimaryMusclesError] = useState('');
+  const [primaryMuscleError, setPrimaryMuscleError] = useState('');
 
   // Check if user is logged in
   const isLoggedIn = !!Cookies.get('token');
+
+  // Fetch options on component mount
+  useEffect(() => {
+    const fetchOptions = async () => {
+      setLoadingOptions(true);
+      try {
+        const [categoriesRes, musclesRes, equipmentRes] = await Promise.all([
+          getExerciseCategories(),
+          getPrimaryMuscles(),
+          getEquipmentTypes()
+        ]);
+        
+        if (categoriesRes.success) {
+          setCategories(categoriesRes.data);
+        }
+        if (musclesRes.success) {
+          setMuscles(musclesRes.data);
+        }
+        if (equipmentRes.success) {
+          setEquipmentOptions(equipmentRes.data);
+        }
+      } catch (err) {
+        console.error('Failed to load options:', err);
+        setError('Failed to load form options');
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
+    if (isLoggedIn) {
+      fetchOptions();
+    }
+  }, [isLoggedIn]);
 
   const validateForm = () => {
     let isValid = true;
@@ -60,7 +95,7 @@ export default function CreateExercisePage() {
     // Reset errors
     setNameError('');
     setCategoryError('');
-    setPrimaryMusclesError('');
+    setPrimaryMuscleError('');
     
     // Validate name
     if (!name.trim()) {
@@ -74,11 +109,7 @@ export default function CreateExercisePage() {
       isValid = false;
     }
     
-    // Validate primary muscles
-    if (primaryMuscles.length === 0) {
-      setPrimaryMusclesError('At least one primary muscle is required');
-      isValid = false;
-    }
+    // Primary muscle is optional, no validation needed
     
     return isValid;
   };
@@ -93,15 +124,12 @@ export default function CreateExercisePage() {
     setSuccess(false);
     
     try {
-      // Prepare exercise data - ensure all required fields are strings, not undefined
       const exerciseData = {
-        name,
+        name: name.trim(),
         category,
-        description: description || "", // Default to empty string for required fields
-        primaryMuscles,
-        secondaryMuscles: secondaryMuscles.length > 0 ? secondaryMuscles : undefined,
-        equipment: equipment || undefined,
-        instructions: instructions || undefined
+        description: description.trim(),
+        primary_muscle: primaryMuscle,
+        equipment: equipment || 'None'
       };
       
       const response = await createExercise(exerciseData);
@@ -114,10 +142,11 @@ export default function CreateExercisePage() {
           router.push('/exercises');
         }, 1500);
       } else {
-        setError(response.error || 'Failed to create exercise');
+        setError(response.error || response.message || 'Failed to create exercise');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create exercise');
+      const errorInfo = err.errorInfo || {};
+      setError(errorInfo.error || errorInfo.message || 'Failed to create exercise');
     } finally {
       setLoading(false);
     }
@@ -141,6 +170,17 @@ export default function CreateExercisePage() {
     );
   }
 
+  if (loadingOptions) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+          <Typography sx={{ ml: 2 }}>Loading form options...</Typography>
+        </Box>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Breadcrumbs sx={{ mb: 3 }}>
@@ -152,15 +192,6 @@ export default function CreateExercisePage() {
         </MuiLink>
         <Typography color="text.primary">Create New Exercise</Typography>
       </Breadcrumbs>
-      
-      <Button
-        startIcon={<ArrowBackIcon />}
-        variant="outlined"
-        onClick={() => router.push('/exercises')}
-        sx={{ mb: 3 }}
-      >
-        Back to Exercises
-      </Button>
       
       <Paper sx={{ p: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom fontWeight={700}>
@@ -203,23 +234,59 @@ export default function CreateExercisePage() {
               <InputLabel>Category</InputLabel>
               <Select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => setCategory(e.target.value as string)}
                 label="Category"
               >
-                {exerciseCategories.map((cat) => (
+                {categories.map((cat) => (
                   <MenuItem key={cat} value={cat}>
                     {cat}
                   </MenuItem>
                 ))}
               </Select>
               {categoryError && (
-                <Typography color="error" variant="caption" sx={{ mt: 0.5, ml: 1.5 }}>
+                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 2 }}>
                   {categoryError}
                 </Typography>
               )}
             </FormControl>
+
+            <FormControl fullWidth error={!!primaryMuscleError}>
+              <InputLabel>Primary Muscle</InputLabel>
+              <Select
+                value={primaryMuscle}
+                onChange={(e) => setPrimaryMuscle(e.target.value as string)}
+                label="Primary Muscle"
+              >
+                <MenuItem value="">None</MenuItem>
+                {muscles.map((muscle) => (
+                  <MenuItem key={muscle} value={muscle}>
+                    {muscle}
+                  </MenuItem>
+                ))}
+              </Select>
+              {primaryMuscleError && (
+                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 2 }}>
+                  {primaryMuscleError}
+                </Typography>
+              )}
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel>Equipment</InputLabel>
+              <Select
+                value={equipment}
+                onChange={(e) => setEquipment(e.target.value as string)}
+                label="Equipment"
+              >
+                {equipmentOptions.map((eq) => (
+                  <MenuItem key={eq} value={eq}>
+                    {eq}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
-          
+
           <TextField
             label="Description"
             fullWidth
@@ -228,97 +295,7 @@ export default function CreateExercisePage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             sx={{ mb: 3 }}
-          />
-          
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, 
-            gap: 3, 
-            mb: 3 
-          }}>
-            <FormControl fullWidth required error={!!primaryMusclesError}>
-              <Autocomplete
-                multiple
-                options={muscleGroups}
-                value={primaryMuscles}
-                onChange={(_, newValue) => setPrimaryMuscles(newValue)}
-                renderInput={(params) => (
-                  <TextField 
-                    {...params} 
-                    label="Primary Muscles" 
-                    required
-                    error={!!primaryMusclesError}
-                    helperText={primaryMusclesError}
-                  />
-                )}
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip 
-                      label={option} 
-                      {...getTagProps({ index })} 
-                      color="primary" 
-                      variant="outlined" 
-                    />
-                  ))
-                }
-              />
-            </FormControl>
-            
-            <Autocomplete
-              multiple
-              options={muscleGroups.filter(muscle => !primaryMuscles.includes(muscle))}
-              value={secondaryMuscles}
-              onChange={(_, newValue) => setSecondaryMuscles(newValue)}
-              renderInput={(params) => (
-                <TextField 
-                  {...params} 
-                  label="Secondary Muscles"
-                />
-              )}
-              renderTags={(value, getTagProps) =>
-                value.map((option, index) => (
-                  <Chip 
-                    label={option} 
-                    {...getTagProps({ index })} 
-                    variant="outlined" 
-                  />
-                ))
-              }
-            />
-          </Box>
-          
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, 
-            gap: 3, 
-            mb: 3 
-          }}>
-            <FormControl fullWidth>
-              <InputLabel>Equipment</InputLabel>
-              <Select
-                value={equipment}
-                onChange={(e) => setEquipment(e.target.value)}
-                label="Equipment"
-              >
-                <MenuItem value="">None</MenuItem>
-                {equipmentTypes.map((item) => (
-                  <MenuItem key={item} value={item}>
-                    {item}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-          
-          <TextField
-            label="Instructions"
-            fullWidth
-            multiline
-            rows={5}
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Provide step-by-step instructions for performing this exercise correctly."
-            sx={{ mb: 4 }}
+            placeholder="Describe how to perform this exercise..."
           />
           
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>

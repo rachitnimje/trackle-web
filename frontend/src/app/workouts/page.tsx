@@ -27,6 +27,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import Cookies from 'js-cookie';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { UserWorkoutsResponse } from '../../api/types';
 
 // Animation variants
 const containerVariants = {
@@ -50,7 +51,7 @@ const itemVariants = {
 };
 
 export default function Workouts() {
-  const [workouts, setWorkouts] = useState<any[]>([]);
+  const [workouts, setWorkouts] = useState<UserWorkoutsResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -66,14 +67,17 @@ export default function Workouts() {
           router.push('/auth/login');
           return;
         }
+        
         const response = await getWorkouts();
+        
         if (response.success && response.data) {
-          setWorkouts(response.data || []);
+          setWorkouts(Array.isArray(response.data) ? response.data : []);
         } else {
-          setError(response.error || 'Failed to load workouts');
+          setError(response.error || response.message || 'Failed to load workouts');
         }
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load workouts');
+        const errorInfo = err.errorInfo || {};
+        setError(errorInfo.error || errorInfo.message || 'Failed to load workouts');
       } finally {
         setLoading(false);
       }
@@ -161,8 +165,8 @@ export default function Workouts() {
             }}
           >
             <List disablePadding>
-              {workouts.map((workout: any, index: number) => (
-                <React.Fragment key={workout.id}>
+              {workouts.map((workout: UserWorkoutsResponse, index: number) => (
+                <React.Fragment key={workout.workout_id}>
                   {index > 0 && <Divider component="li" />}
                   <ListItem 
                     disableGutters
@@ -188,14 +192,15 @@ export default function Workouts() {
                           e.preventDefault();
                           if (window.confirm('Are you sure you want to delete this workout?')) {
                             try {
-                              const response = await deleteWorkout(workout.id);
+                              const response = await deleteWorkout(workout.workout_id.toString());
                               if (response.success) {
-                                setWorkouts(prev => prev.filter(w => w.id !== workout.id));
+                                setWorkouts(prev => prev.filter(w => w.workout_id !== workout.workout_id));
                               } else {
-                                setError(response.error || 'Failed to delete workout');
+                                setError(response.error || response.message || 'Failed to delete workout');
                               }
                             } catch (err: any) {
-                              setError(err.response?.data?.message || 'Failed to delete workout');
+                              const errorInfo = err.errorInfo || {};
+                              setError(errorInfo.error || errorInfo.message || 'Failed to delete workout');
                             }
                           }
                         }}
@@ -213,7 +218,7 @@ export default function Workouts() {
                   >
                     <MuiLink 
                       component={Link} 
-                      href={`/workouts/${workout.id}`} 
+                      href={`/workouts/${workout.workout_id}`} 
                       underline="none" 
                       sx={{ 
                         width: '100%', 
@@ -226,19 +231,29 @@ export default function Workouts() {
                       <ListItemText 
                         primary={
                           <Typography variant="h6" fontWeight={600}>
-                            {workout.name || `Workout ${workout.id}`}
+                            {workout.workout_name || `Workout ${workout.workout_id}`}
                           </Typography>
                         } 
                         secondary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
-                            <CalendarTodayIcon sx={{ fontSize: 16, mr: 0.5, color: 'primary.main' }} />
-                            <Typography variant="body2" color="text.secondary">
-                              {new Date(workout.date).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'short',
-                                day: 'numeric'
-                              })}
+                          <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                              <CalendarTodayIcon sx={{ fontSize: 16, mr: 0.5, color: 'primary.main' }} />
+                              <Typography variant="body2" color="text.secondary">
+                                {new Date(workout.logged_at).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric'
+                                })}
+                              </Typography>
+                            </Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                              Template: {workout.template_name}
                             </Typography>
+                            {workout.notes && (
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontStyle: 'italic' }}>
+                                {workout.notes}
+                              </Typography>
+                            )}
                           </Box>
                         } 
                       />

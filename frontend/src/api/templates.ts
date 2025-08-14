@@ -1,8 +1,10 @@
 import { api } from './apiClient';
-import { ApiResponse, Template, CreateTemplateRequest } from './types';
+import { ApiResponse, PaginatedResponse, Template, CreateTemplateRequest } from './types';
 
-export const getTemplates = async (): Promise<ApiResponse<Template[]>> => {
-  return api.get<Template[]>('/me/templates');
+export const getTemplates = async (page: number = 1, limit: number = 10, search?: string): Promise<PaginatedResponse<Template[]>> => {
+  const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+  if (search) params.append('search', search);
+  return api.getPaginated<Template[]>(`/me/templates?${params.toString()}`);
 };
 
 export const getTemplate = async (id: string): Promise<ApiResponse<Template>> => {

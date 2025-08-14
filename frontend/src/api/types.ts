@@ -50,6 +50,8 @@ export interface Exercise {
   name: string;
   description: string;
   category: string;
+  primary_muscle: string;
+  equipment: string;
   created_at: string;
   updated_at: string;
 }
@@ -97,6 +99,35 @@ export interface Workout {
   created_at: string;
   updated_at: string;
   entries: WorkoutEntry[];
+}
+
+// Backend API response types
+export interface UserWorkoutsResponse {
+  workout_id: number;
+  workout_name: string;
+  template_id: number;
+  template_name: string;
+  logged_at: string;
+  notes: string;
+}
+
+export interface UserWorkoutResponse {
+  id: number;
+  template_id: number;
+  template_name: string;
+  workout_name: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  entries: UserWorkoutEntryResponse[];
+}
+
+export interface UserWorkoutEntryResponse {
+  exercise_id: number;
+  exercise_name: string;
+  set_number: number;
+  reps: number;
+  weight: number;
 }
 
 // Create request types

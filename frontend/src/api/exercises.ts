@@ -1,5 +1,5 @@
-import { api } from './apiClient';
-import { ApiResponse, Exercise } from './types';
+import { api } from "./apiClient";
+import { ApiResponse, PaginatedResponse, Exercise } from "./types";
 
 // Additional exercise properties for the UI
 export interface ExtendedExercise extends Exercise {
@@ -9,123 +9,80 @@ export interface ExtendedExercise extends Exercise {
   equipment?: string;
 }
 
-// Get all exercises
-export const getExercises = async (): Promise<ApiResponse<Exercise[]>> => {
-  return api.get<Exercise[]>('/exercises');
+// Get all exercises with pagination
+export const getExercises = async (
+  page: number = 1,
+  limit: number = 10,
+  category?: string,
+  search?: string,
+  muscle?: string
+): Promise<PaginatedResponse<Exercise[]>> => {
+  const params = new URLSearchParams({
+    page: page.toString(),
+    limit: limit.toString(),
+  });
+  if (category) params.append("category", category);
+  if (search) params.append("search", search);
+  if (muscle) params.append("muscle", muscle);
+  return api.getPaginated<Exercise[]>(`/exercises?${params.toString()}`);
 };
 
 // Get a specific exercise by ID
-export const getExercise = async (id: number): Promise<ApiResponse<Exercise>> => {
+export const getExercise = async (
+  id: number
+): Promise<ApiResponse<Exercise>> => {
   return api.get<Exercise>(`/exercises/${id}`);
 };
 
 // Create a new exercise
-export const createExercise = async (exercise: Omit<Exercise, 'id' | 'created_at' | 'updated_at'>): Promise<ApiResponse<Exercise>> => {
-  return api.post<Exercise>('/exercises', exercise);
+export const createExercise = async (
+  exercise: Omit<Exercise, "id" | "created_at" | "updated_at">
+): Promise<ApiResponse<Exercise>> => {
+  return api.post<Exercise>("/exercises", exercise);
 };
 
 // Update an exercise
-export const updateExercise = async (id: number, exercise: Partial<Omit<Exercise, 'id' | 'created_at' | 'updated_at'>>): Promise<ApiResponse<Exercise>> => {
+export const updateExercise = async (
+  id: number,
+  exercise: Partial<Omit<Exercise, "id" | "created_at" | "updated_at">>
+): Promise<ApiResponse<Exercise>> => {
   return api.put<Exercise>(`/exercises/${id}`, exercise);
 };
 
 // Delete an exercise
-export const deleteExercise = async (id: number): Promise<ApiResponse<null>> => {
+export const deleteExercise = async (
+  id: number
+): Promise<ApiResponse<null>> => {
   return api.delete<null>(`/exercises/${id}`);
 };
 
+// Get exercise categories from API
+export const getExerciseCategories = async (): Promise<
+  ApiResponse<string[]>
+> => {
+  return api.get<string[]>("/exercises/categories");
+};
+
+// Get primary muscles from API
+export const getPrimaryMuscles = async (): Promise<ApiResponse<string[]>> => {
+  return api.get<string[]>("/exercises/muscles");
+};
+
+// Get equipment types from API
+export const getEquipmentTypes = async (): Promise<ApiResponse<string[]>> => {
+  return api.get<string[]>("/exercises/equipment");
+};
+
 // Search exercises by name or category
-export const searchExercises = async (query: string): Promise<ApiResponse<Exercise[]>> => {
+export const searchExercises = async (
+  query: string
+): Promise<ApiResponse<Exercise[]>> => {
   return api.get<Exercise[]>(`/exercises/search?q=${query}`);
 };
 
 // Get exercises by category
-export const getExercisesByCategory = async (category: string): Promise<ApiResponse<Exercise[]>> => {
+export const getExercisesByCategory = async (
+  category: string
+): Promise<ApiResponse<Exercise[]>> => {
   return api.get<Exercise[]>(`/exercises/category/${category}`);
 };
-
-// Common exercise categories for reference
-export const exerciseCategories = [
-  'Strength',
-  'Cardio',
-  'Flexibility',
-  'Balance',
-  'Plyometric',
-  'Powerlifting',
-  'Olympic Weightlifting',
-  'Calisthenics',
-  'Functional'
-];
-
-// Common muscle groups for reference
-export const muscleGroups = [
-  'Chest',
-  'Back',
-  'Shoulders',
-  'Biceps',
-  'Triceps',
-  'Forearms',
-  'Quadriceps',
-  'Hamstrings',
-  'Calves',
-  'Abdominals',
-  'Obliques',
-  'Glutes',
-  'Trapezius',
-  'Lats',
-  'Rhomboids',
-  'Deltoids',
-  'Abs',
-  'Lower Back',
-  'Traps'
-];
-
-// Common equipment types for reference
-export const equipmentTypes = [
-  'Barbell',
-  'Dumbbell',
-  'Kettlebell',
-  'Cable Machine',
-  'Smith Machine',
-  'Resistance Band',
-  'Bodyweight',
-  'Machine',
-  'TRX/Suspension',
-  'Medicine Ball',
-  'Stability Ball',
-  'Foam Roller',
-  'Bench',
-  'Pull-up Bar',
-  'Treadmill',
-  'Stationary Bike',
-  'Elliptical',
-  'Rowing Machine'
-];
-
-// Default exercises that can be used when no backend is available
-export const defaultExercises: ExtendedExercise[] = [
-  {
-    id: 1,
-    name: 'Bench Press',
-    category: 'Strength',
-    description: 'A compound upper-body exercise that involves pressing a weight upwards from a supine position.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    primaryMuscles: ['Chest', 'Triceps', 'Shoulders'],
-    secondaryMuscles: ['Abs'],
-    equipment: 'Barbell',
-    instructions: 'Lie on a bench with feet flat on the floor. Grip the barbell slightly wider than shoulder-width. Lower the bar to the middle of your chest, then press back up to starting position.'
-  },
-  {
-    id: 2,
-    name: 'Squat',
-    category: 'Strength',
-    description: 'A compound lower-body exercise that involves bending the knees and hips to lower and raise the body.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    primaryMuscles: ['Quadriceps', 'Glutes', 'Hamstrings'],
-    secondaryMuscles: ['Abs', 'Lower Back'],
-    equipment: 'Barbell',
-    instructions: 'Stand with feet shoulder-width apart. Place the barbell on your upper back. Bend your knees and hips to lower your body until thighs are parallel to the floor, then return to standing.'
-  }
-];

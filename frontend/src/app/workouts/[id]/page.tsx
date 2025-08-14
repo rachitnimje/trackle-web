@@ -5,12 +5,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getWorkout } from '../../../api/workouts';
 import Cookies from 'js-cookie';
+import { UserWorkoutResponse } from '../../../api/types';
 
 export default function WorkoutDetails() {
   const params = useParams();
   const router = useRouter();
   const workoutId = params?.id;
-  const [workout, setWorkout] = useState<any>(null);
+  const [workout, setWorkout] = useState<UserWorkoutResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -25,10 +26,16 @@ export default function WorkoutDetails() {
           return;
         }
         
-        const data = await getWorkout(workoutId as string, token);
-        setWorkout(data.workout || data);
+        const response = await getWorkout(workoutId as string);
+        
+        if (response.success && response.data) {
+          setWorkout(response.data);
+        } else {
+          setError(response.error || response.message || 'Failed to load workout');
+        }
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load workout');
+        const errorInfo = err.errorInfo || {};
+        setError(errorInfo.error || errorInfo.message || 'Failed to load workout');
       } finally {
         setLoading(false);
       }
@@ -50,71 +57,85 @@ export default function WorkoutDetails() {
         <Alert severity="error">{error}</Alert>
       ) : workout ? (
         <Box>
-          <Typography variant="h4" gutterBottom>{workout.name || `Workout ${workout.id}`}</Typography>
+          <Typography variant="h4" gutterBottom>{workout.workout_name || `Workout ${workout.id}`}</Typography>
           <Typography variant="body1" color="text.secondary" gutterBottom>
-            {formatDate(workout.created_at || workout.date)}
+            Template: {workout.template_name}
+          </Typography>
+          <Typography variant="body1" color="text.secondary" gutterBottom>
+            {formatDate(workout.created_at)}
           </Typography>
           
-          {workout.description && (
-            <Typography variant="body1" paragraph>
-              {workout.description}
+          {workout.notes && (
+            <Typography variant="body1" paragraph sx={{ mt: 2 }}>
+              Notes: {workout.notes}
             </Typography>
           )}
           
           <Divider sx={{ my: 3 }} />
           
-          {workout.exercises && workout.exercises.length > 0 ? (
+          {workout.entries && workout.entries.length > 0 ? (
             <Box sx={{ mt: 3 }}>
-              <Typography variant="h5" gutterBottom>Exercises</Typography>
+              <Typography variant="h5" gutterBottom>Exercise Entries</Typography>
               
-              {workout.exercises.map((exercise: any, index: number) => (
-                <Paper key={exercise.id || index} sx={{ p: 3, mb: 3 }}>
+              {/* Group entries by exercise */}
+              {Object.entries(
+                workout.entries.reduce((acc: Record<string, {name: string, entries: typeof workout.entries}>, entry) => {
+                  if (!acc[entry.exercise_id]) {
+                    acc[entry.exercise_id] = {
+                      name: entry.exercise_name,
+                      entries: []
+                    };
+                  }
+                  acc[entry.exercise_id].entries.push(entry);
+                  return acc;
+                }, {})
+              ).map(([exerciseId, exerciseData]: [string, {name: string, entries: typeof workout.entries}]) => (
+                <Paper key={exerciseId} sx={{ p: 3, mb: 3 }}>
                   <Typography variant="h6" gutterBottom>
-                    {exercise.name}
+                    {exerciseData.name}
                   </Typography>
                   
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="subtitle2" gutterBottom>
-                      Sets: {exercise.sets || exercise.weights?.length || 0}
-                    </Typography>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Reps: {exercise.reps || "N/A"}
+                      Sets performed: {exerciseData.entries.length}
                     </Typography>
                     
-                    {exercise.weights && exercise.weights.length > 0 && (
-                      <Box sx={{ mt: 2 }}>
-                        <Typography variant="subtitle2" gutterBottom>
-                          Weights:
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {exercise.weights.map((weight: number, i: number) => (
-                            <Box 
-                              key={i} 
-                              sx={{ 
-                                bgcolor: 'primary.light', 
-                                color: 'white', 
-                                py: 0.5, 
-                                px: 1.5, 
-                                borderRadius: 1,
-                                minWidth: 40,
-                                textAlign: 'center'
-                              }}
-                            >
-                              <Typography variant="body2">
-                                {weight} kg
-                              </Typography>
-                            </Box>
-                          ))}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
+                      {exerciseData.entries
+                        .sort((a, b) => a.set_number - b.set_number)
+                        .map((entry, index: number) => (
+                        <Box 
+                          key={index} 
+                          sx={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            p: 1,
+                            bgcolor: 'grey.100',
+                            borderRadius: 1
+                          }}
+                        >
+                          <Typography variant="body2" sx={{ minWidth: 60 }}>
+                            Set {entry.set_number}:
+                          </Typography>
+                          <Typography variant="body2">
+                            {entry.reps} reps
+                          </Typography>
+                          {entry.weight > 0 && (
+                            <Typography variant="body2">
+                              @ {entry.weight} kg
+                            </Typography>
+                          )}
                         </Box>
-                      </Box>
-                    )}
+                      ))}
+                    </Box>
                   </Box>
                 </Paper>
               ))}
             </Box>
           ) : (
             <Alert severity="info" sx={{ mt: 3 }}>
-              No exercises found for this workout.
+              No exercise entries found for this workout.
             </Alert>
           )}
           

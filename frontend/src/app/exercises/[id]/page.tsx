@@ -11,26 +11,19 @@ import {
   Chip, 
   Button, 
   Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Card,
-  CardContent,
   Breadcrumbs,
   Link as MuiLink
 } from '@mui/material';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { getExercise, defaultExercises, Exercise } from '../../../api/exercises';
+import { getExercise } from '../../../api/exercises';
+import { Exercise } from '../../../api/types';
 import FitnessCenterIcon from '@mui/icons-material/FitnessCenter';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CategoryIcon from '@mui/icons-material/Category';
 import FitnessCenterOutlinedIcon from '@mui/icons-material/FitnessCenterOutlined';
 import BuildIcon from '@mui/icons-material/Build';
 import DescriptionIcon from '@mui/icons-material/Description';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
 import Cookies from 'js-cookie';
 
 export default function ExerciseDetailsPage() {
@@ -52,20 +45,8 @@ export default function ExerciseDetailsPage() {
       setLoading(true);
       try {
         let data;
-        try {
-          // Try to fetch from API first
-          data = await getExercise(exerciseId);
-        } catch (error) {
-          // Fallback to default exercises if API fails
-          console.log('Using default exercises');
-          const foundExercise = defaultExercises.find(ex => ex.id === exerciseId);
-          if (foundExercise) {
-            data = { data: foundExercise };
-          } else {
-            throw new Error('Exercise not found');
-          }
-        }
-        
+        // Fetch from API
+        data = await getExercise(exerciseId);
         setExercise(data.data || null);
       } catch (err: any) {
         setError(err.message || 'Failed to load exercise details');
@@ -98,25 +79,16 @@ export default function ExerciseDetailsPage() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Breadcrumbs sx={{ mb: 3 }}>
-        <MuiLink component={Link} href="/" color="inherit">
+        <MuiLink component={Link} href="/" color="inherit" underline="hover">
           Home
         </MuiLink>
-        <MuiLink component={Link} href="/exercises" color="inherit">
+        <MuiLink component={Link} href="/exercises" color="inherit" underline="hover">
           Exercises
         </MuiLink>
-        <Typography color="text.primary">
+        <Typography color="text.primary" fontWeight={500}>
           {loading ? 'Loading...' : exercise?.name || 'Not Found'}
         </Typography>
       </Breadcrumbs>
-
-      <Button
-        startIcon={<ArrowBackIcon />}
-        variant="outlined"
-        onClick={() => router.push('/exercises')}
-        sx={{ mb: 3 }}
-      >
-        Back to Exercises
-      </Button>
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -144,124 +116,164 @@ export default function ExerciseDetailsPage() {
       ) : (
         <Box>
           <Paper sx={{ p: 4, mb: 4 }}>
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 4 }}>
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <FitnessCenterIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
-                  <Typography variant="h4" component="h1" fontWeight={700}>
-                    {exercise.name}
-                  </Typography>
-                </Box>
-                
-                <Box sx={{ display: 'flex', mb: 3 }}>
-                  <Chip 
-                    label={exercise.category} 
-                    color="primary" 
-                    sx={{ mr: 1 }} 
-                  />
-                  {exercise.equipment && (
-                    <Chip 
-                      label={exercise.equipment} 
-                      variant="outlined" 
-                    />
-                  )}
-                </Box>
-                
-                {exercise.description && (
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="h6" gutterBottom>
-                      <DescriptionIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 20 }} />
-                      Description
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary" paragraph>
-                      {exercise.description}
-                    </Typography>
-                  </Box>
-                )}
-                
-                <Divider sx={{ my: 3 }} />
-                
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    <FitnessCenterOutlinedIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 20 }} />
-                    Muscles Worked
-                  </Typography>
-                  
-                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-                    Primary:
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                    {exercise.primaryMuscles.map((muscle) => (
-                      <Chip 
-                        key={muscle} 
-                        label={muscle} 
-                        color="primary" 
-                        variant="outlined" 
-                      />
-                    ))}
-                  </Box>
-                  
-                  {exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0 && (
-                    <>
-                      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-                        Secondary:
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        {exercise.secondaryMuscles.map((muscle) => (
-                          <Chip 
-                            key={muscle} 
-                            label={muscle} 
-                            variant="outlined" 
-                          />
-                        ))}
-                      </Box>
-                    </>
-                  )}
-                </Box>
+            {/* Header Section */}
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
+              <FitnessCenterIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+              <Typography variant="h4" component="h1" fontWeight={700}>
+                {exercise.name}
+              </Typography>
+            </Box>
+
+            {/* Metadata Section */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              gap: 2, 
+              mb: 4, 
+              p: 2,
+              backgroundColor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontWeight: 500 }}>
+                  ID:
+                </Typography>
+                <Typography variant="body2" color="text.primary" fontWeight={600}>
+                  #{exercise.id}
+                </Typography>
               </Box>
-              
-              <Box sx={{ flex: 1 }}>
-                {exercise.instructions && (
-                  <Card elevation={2}>
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>
-                        <MenuBookIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 20 }} />
-                        Instructions
-                      </Typography>
-                      <List>
-                        {exercise.instructions.split('. ').filter(Boolean).map((step, index) => (
-                          <ListItem key={index} alignItems="flex-start" sx={{ py: 1 }}>
-                            <ListItemIcon sx={{ minWidth: 36 }}>
-                              <CheckCircleOutlineIcon color="primary" />
-                            </ListItemIcon>
-                            <ListItemText primary={`${step}${!step.endsWith('.') ? '.' : ''}`} />
-                          </ListItem>
-                        ))}
-                      </List>
-                    </CardContent>
-                  </Card>
-                )}
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontWeight: 500 }}>
+                  Created:
+                </Typography>
+                <Typography variant="body2" color="text.primary">
+                  {new Date(exercise.created_at).toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, fontWeight: 500 }}>
+                  Updated:
+                </Typography>
+                <Typography variant="body2" color="text.primary">
+                  {new Date(exercise.updated_at).toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Typography>
               </Box>
             </Box>
+
+            {/* Exercise Details Grid */}
+            <Box sx={{ 
+              display: 'grid', 
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(auto-fit, minmax(250px, 1fr))' }, 
+              gap: 3, 
+              mb: 4 
+            }}>
+              {/* Category Section */}
+              <Box sx={{ 
+                p: 3, 
+                border: '1px solid', 
+                borderColor: 'divider', 
+                borderRadius: 2,
+                backgroundColor: 'background.paper'
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <CategoryIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Typography variant="h6" fontWeight={600}>
+                    Category
+                  </Typography>
+                </Box>
+                <Chip 
+                  label={exercise.category} 
+                  color="primary" 
+                  size="medium"
+                  sx={{ fontWeight: 500 }}
+                />
+              </Box>
+
+              {/* Primary Muscle Section - Only show if available */}
+              {exercise.primary_muscle && (
+                <Box sx={{ 
+                  p: 3, 
+                  border: '1px solid', 
+                  borderColor: 'divider', 
+                  borderRadius: 2,
+                  backgroundColor: 'background.paper'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <FitnessCenterOutlinedIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" fontWeight={600}>
+                      Primary Muscle
+                    </Typography>
+                  </Box>
+                  <Chip 
+                    label={exercise.primary_muscle} 
+                    color="secondary" 
+                    size="medium"
+                    sx={{ fontWeight: 500 }}
+                  />
+                </Box>
+              )}
+
+              {/* Equipment Section - Only show if available */}
+              {exercise.equipment && (
+                <Box sx={{ 
+                  p: 3, 
+                  border: '1px solid', 
+                  borderColor: 'divider', 
+                  borderRadius: 2,
+                  backgroundColor: 'background.paper'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <BuildIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" fontWeight={600}>
+                      Equipment
+                    </Typography>
+                  </Box>
+                  <Chip 
+                    label={exercise.equipment} 
+                    variant="outlined" 
+                    size="medium"
+                    sx={{ fontWeight: 500 }}
+                  />
+                </Box>
+              )}
+            </Box>
+
+            {/* Description Section */}
+            {exercise.description && (
+              <Box sx={{ 
+                p: 3, 
+                border: '1px solid', 
+                borderColor: 'divider', 
+                borderRadius: 2,
+                backgroundColor: 'background.paper',
+                mb: 3
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <DescriptionIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Typography variant="h6" fontWeight={600}>
+                    Description
+                  </Typography>
+                </Box>
+                <Typography variant="body1" color="text.secondary" lineHeight={1.6}>
+                  {exercise.description}
+                </Typography>
+              </Box>
+            )}
           </Paper>
-          
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-            <Button
-              variant="outlined"
-              startIcon={<ArrowBackIcon />}
-              onClick={() => router.push('/exercises')}
-            >
-              Back to Exercises
-            </Button>
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={<FitnessCenterIcon />}
-              onClick={() => router.push('/workouts/create')}
-            >
-              Add to Workout
-            </Button>
-          </Box>
         </Box>
       )}
     </Container>
