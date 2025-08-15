@@ -155,13 +155,6 @@ export default function TemplatesPage() {
                   </Tooltip>
                 </Box>
                 
-                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, mb: 2 }}>
-                  <FitnessCenterIcon sx={{ fontSize: 16, mr: 1, color: 'primary.main' }} />
-                  <Typography variant="body2" color="text.secondary">
-                    {template.exercises?.length || 0} exercise{template.exercises?.length !== 1 ? 's' : ''}
-                  </Typography>
-                </Box>
-                
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                   {template.description || 'No description provided'}
                 </Typography>

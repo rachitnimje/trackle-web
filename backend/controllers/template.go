@@ -24,13 +24,17 @@ type CreateTemplateExerciseRequest struct {
 }
 
 type GetAllTemplatesResponse struct {
-	gorm.Model
+	ID          string `json:"id"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
 type TemplateResponse struct {
-	gorm.Model
+	ID          string                     `json:"id"`
+	CreatedAt   string                     `json:"created_at"`
+	UpdatedAt   string                     `json:"updated_at"`
 	Name        string                     `json:"name"`
 	Description string                     `json:"description"`
 	UserID      uint                       `json:"user_id"`
@@ -205,7 +209,9 @@ func GetAllUserTemplates(db *gorm.DB) gin.HandlerFunc {
 
 		for _, template := range templates {
 			response = append(response, GetAllTemplatesResponse{
-				Model:       template.Model,
+				ID:          strconv.Itoa(int(template.ID)),
+				CreatedAt:   template.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+				UpdatedAt:   template.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 				Name:        template.Name,
 				Description: template.Description,
 			})
@@ -256,7 +262,9 @@ func GetUserTemplate(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		response := TemplateResponse{
-			Model:       template.Model,
+			ID:          strconv.Itoa(int(template.ID)),
+			CreatedAt:   template.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt:   template.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			Name:        template.Name,
 			Description: template.Description,
 			UserID:      template.UserID,
